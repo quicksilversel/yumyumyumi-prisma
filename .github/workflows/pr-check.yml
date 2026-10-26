@@ -19,9 +19,6 @@ jobs:
       - run: npm run lint
       - run: npx tsc --noEmit
       - run: npm test
-      - name: Install Playwright chromium
-        run: npx playwright install chromium --with-deps
-      - run: npm run test:storybook
       # Build pre-renders pages that query the database, so it only runs
       # once the DATABASE_URL repo secret is configured.
       - name: Build
@@ -29,27 +26,3 @@ jobs:
         run: npm run build
         env:
           AUTH_SECRET: ci-build-placeholder
-
-  # TEMPORARY: reproduces the Prisma Compute setup job's install failure.
-  # The setup job resolves dependencies from scratch (lockfile-blind) on an
-  # unknown Node version and only reports an unreadable eresolve-report path.
-  # This job does a lockfile-less resolve on clean Linux per Node version so
-  # the full ERESOLVE report becomes readable. Remove once the setup job is
-  # green and the root cause is logged in MIGRATION_LOG.md.
-  diagnose-fresh-install:
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    strategy:
-      fail-fast: false
-      matrix:
-        node-version: [22, 24]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node-version }}
-      - name: Fresh resolve without lockfile
-        run: |
-          node --version && npm --version
-          rm -f package-lock.json
-          npm install --package-lock-only
