@@ -160,3 +160,37 @@ Upgrade friction (none of it Prisma's):
 ### Open
 
 - Whether the builder's Node/npm versions differ from local remains unconfirmed (no visibility). If the next retry still fails, the remaining options are asking Prisma support or bisecting dependencies blind.
+
+---
+
+## Entry 3 — Third identical failure; moving reproduction to CI (2026-10-26)
+
+### What happened
+
+[HUMAN] The entry 2 upgrade merged at 07:33 UTC; the setup job failed again at 07:36 UTC with the same error shape for the third time: `install_failed` plus an unreadable `eresolve-report.txt` path. Three fixes based on local reproduction have now shipped (version pin, then full family upgrade) and none can be confirmed against what the builder actually does.
+
+### Local diagnostics, exhausted
+
+Against the upgraded `package.json` (vitest 5 / storybook 10.6), every local attempt to force the error passes cleanly on npm 11.17.0 / Node 24:
+
+- from-scratch resolve, no lockfile: passes
+- `--strict-peer-deps`: passes
+- `--omit=optional`: passes
+
+Remaining untestable variable locally: the builder's Node version (only Node 24/26 installed here; Compute docs say the platform supports Node 22.18+/24.11+/26+, so the build image may run Node 22, and npm's resolver selects different package versions under a different Node, which changes the peer graph).
+
+### Resolution attempt: make the failure readable
+
+Added `.github/workflows/pr-check.yml` with two jobs:
+
+1. `check` — lint, typecheck, unit + storybook browser tests on every PR (the build step activates once a `DATABASE_URL` repo secret exists, since `next build` pre-renders pages that query the database). This was planned anyway; pulled forward.
+2. `diagnose-fresh-install` (temporary) — lockfile-less `npm install --package-lock-only` on clean ubuntu for Node 22 and 24. If either reproduces the ERESOLVE, the full report finally becomes readable in the Actions log.
+
+### Cause classification
+
+- `prisma-platform` — third occurrence. The combination of (a) lockfile-blind dependency resolution, (b) no access to install logs, and (c) no visibility into the build image's Node/npm versions means the error is being fixed by hypothesis. An agent-oriented platform claim implies machine-readable failures; this one cannot be read by human or agent.
+
+### Open
+
+- If CI reproduces on Node 22: pin/adjust whatever the report names, or set the builder's expected Node explicitly if the platform honors `engines`/a config.
+- If CI passes on both Node versions: the builder diverges from stock npm on clean Linux, and the realistic next step is contacting Prisma (the collaboration contact offered help; the opaque setup job is legitimate product feedback regardless).
