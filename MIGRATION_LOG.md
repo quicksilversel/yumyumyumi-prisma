@@ -61,3 +61,45 @@ Prisma reached out after the blog post about migrating this site off Supabase to
 - [HUMAN] Clone command was run by the human (agent sandbox cannot write outside its working directories). Cause: agent environment, not Prisma.
 - [HUMAN] Created the `yumyumyumi-prisma` GitHub repo.
 - [HUMAN] Pending: interactive Prisma login/workspace creation (done in a separate window to keep session credentials out of this transcript).
+
+---
+
+## Entry 1 — Prisma GitHub setup job fails at `npm install` (2026-10-26)
+
+### What happened
+
+[HUMAN] Connecting the GitHub repo in the Prisma Console failed during the platform's setup job, reported in the Console as:
+
+```
+Setup job failed at step 'install': install_failed : npm error
+/home/user/.npm/_logs/2026-10-26T06_25_47_515Z-eresolve-report.txt
+```
+
+The agent cannot see the Prisma Console, so the human relayed the error.
+
+### Diagnosis
+
+Reproduced locally by resolving dependencies from scratch against the public registry (no lockfile):
+
+```
+npm error ERESOLVE unable to resolve dependency tree
+npm error Could not resolve dependency:
+npm error peerOptional vitest@"^4.0.0 || ^5.0.0" from @storybook/addon-vitest@10.6.3
+```
+
+`package.json` had `@storybook/addon-vitest: ^10.4.4`; a fresh resolution picks 10.6.3, which dropped vitest 3 peer support, while the project pins `vitest ^3.2.4`. Local installs never hit this because the committed `package-lock.json` holds addon-vitest 10.4.4 + vitest 3.2.6, and plain `npm install` honors it.
+
+### Cause classification
+
+Split cause:
+
+- `existing-code` — the latent peer conflict (a caret range on a Storybook addon whose newer minors require vitest 4) was in the repo before the migration.
+- `prisma-platform` — the setup job re-resolved dependencies instead of honoring a valid, in-sync, committed lockfile (`npm install` and `npm ci` both succeed against this repo as-is). Debuggability note: the Console error points at an `eresolve-report.txt` on the build machine with no way to read it from the Console; the actual conflict had to be reproduced locally.
+
+### Resolution
+
+Constrained `@storybook/addon-vitest` to `~10.4.4` so even a from-scratch resolution succeeds. Verified: fresh `--package-lock-only` resolve passes, `npx tsc --noEmit` clean, 103/103 unit tests pass. Installed versions unchanged (lockfile diff is the two spec strings only).
+
+### Docs/CLI notes
+
+- Prisma docs state migrations must use the direct (non-pooled) connection string; the Console initially surfaced only the pooled URL. Per docs, both strings share credentials and differ only in hostname (`pooled.db.prisma.io` vs `db.prisma.io`).
