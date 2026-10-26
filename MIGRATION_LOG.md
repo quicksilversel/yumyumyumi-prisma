@@ -194,3 +194,9 @@ Added `.github/workflows/pr-check.yml` with two jobs:
 
 - If CI reproduces on Node 22: pin/adjust whatever the report names, or set the builder's expected Node explicitly if the platform honors `engines`/a config.
 - If CI passes on both Node versions: the builder diverges from stock npm on clean Linux, and the realistic next step is contacting Prisma (the collaboration contact offered help; the opaque setup job is legitimate product feedback regardless).
+
+### CI diagnostic results
+
+All green on the first run: `check` (lint, typecheck, 103 unit + 175 browser tests) passed, and `diagnose-fresh-install` resolved the tree from scratch without error on clean ubuntu under **both Node 22 and Node 24** (same npm 11.x line as the builder's error output). Stock npm cannot be made to fail on this package.json anywhere we control.
+
+**Revised leading hypothesis:** the Console's "retry" may re-run the setup job against a checkout cached from the first connection attempt, so none of the three fixes were ever actually tested by the builder. The timeline fits: every failure is byte-identical to the first, and the original pre-fix tree is the one tree that reproducibly fails a fresh resolve everywhere. Next action [HUMAN]: disconnect the GitHub repo in the Prisma Console and connect it again from scratch instead of retrying, forcing a fresh clone. If even a fresh connection fails, contact Prisma with the findings above.
