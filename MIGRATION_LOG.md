@@ -12,10 +12,26 @@ Human interventions are tagged `[HUMAN]` and counted in the final summary.
 
 ### Context
 
-Prisma reached out after the blog post about migrating this site off Supabase to Neon + Auth.js + Vercel Blob, and asked for a follow-up where an AI agent rebuilds the site on the Prisma platform, with an honest outside view of how it goes. No payment involved; done for the author's portfolio. The article will be an evaluation of agent-platform fit, not a tutorial.
+Prisma reached out after the blog post about migrating this site off Supabase to Neon + Auth.js + Vercel Blob, and asked for a follow-up where an AI agent rebuilds the site on the Prisma platform, with an honest outside view of how it goes. The article will be an evaluation of agent-platform fit, not a tutorial.
 
 ### Standing brief (verbatim, from the human)
 
+> I'm migrating my hobby recipe app (Next.js) from Drizzle + Neon on Vercel to Prisma ORM + Prisma Postgres + Prisma Compute. I'm writing a blog post evaluating how well this stack works when an AI agent does the migration, so how you work matters as much as the result.
+>
+> ## Context
+> - Current stack: Next.js, Drizzle ORM, Neon Postgres, Auth.js (Credentials, single user, JWT), Vercel Blob for images, Zod validation.
+> - Data: 19 recipes, 4 bookmarks, 1 user. ingredients/directions are jsonb.
+> - Keep Vercel Blob for storage. Do not migrate storage.
+> - Prisma docs: https://www.prisma.io/docs. Install and use the official Prisma agent skills (github.com/prisma/skills) if available.
+>
+> ## Constraints (these must hold, but figure out how yourself)
+> - All existing Zod schemas and component contracts stay unchanged. Only the internals of the data-access layer change.
+> - The app must behave identically: listing, detail, create/edit/delete, bookmarks, login, image upload.
+> - Data must be migrated with no loss. Verify row counts and spot-check content afterward.
+> - Do NOT touch the current production deployment or Neon database. Work on a new branch and deploy to a separate Compute URL.
+> - No secrets in code or logs.
+>
+> ## Process
 > 1. First, read the codebase and the Prisma docs, then give me a plan before changing anything.
 > 2. Work in small, verifiable steps. After each step, run type checks and validate data against the Zod schemas.
 > 3. Keep a running log in MIGRATION_LOG.md with, for each step:
@@ -103,3 +119,44 @@ Constrained `@storybook/addon-vitest` to `~10.4.4` so even a from-scratch resolu
 ### Docs/CLI notes
 
 - Prisma docs state migrations must use the direct (non-pooled) connection string; the Console initially surfaced only the pooled URL. Per docs, both strings share credentials and differ only in hostname (`pooled.db.prisma.io` vs `db.prisma.io`).
+
+---
+
+## Entry 2 — Setup job fails again with the same opaque error (2026-10-26)
+
+### What happened
+
+[HUMAN] After the entry 1 fix merged to `main` (06:44 UTC), the human retried connecting the repo. The setup job failed again at 06:51 UTC with a byte-for-byte identical error shape: `install_failed` plus a path to an `eresolve-report.txt` on the build machine.
+
+### Diagnosis (incomplete, by necessity)
+
+This failure could not be reproduced locally. A from-scratch, no-lockfile resolution of the fixed `package.json` against the public registry passes cleanly on the local toolchain (npm 11.17.0, Node 24). Conclusion: Prisma's build image resolves a different dependency tree than local npm. The leading suspect is a different Node version on the builder, since npm's resolver skips package versions whose `engines` don't match the running Node, which changes the whole peer graph. This is unverifiable from outside: the Console shows neither the install log, nor the report file, nor the builder's Node/npm versions. Second occurrence of the same debuggability wall; the only available strategy was to remove the entire class of error rather than fix the specific conflict.
+
+### Human intervention on the approach
+
+- [HUMAN] The agent's first proposal was a committed `.npmrc` with `legacy-peer-deps=true` (suppress peer checking entirely, since the builder's view of the tree is unknowable). The human rejected it: no resolver overrides; upgrade the packages properly instead.
+
+### Resolution: upgrade the vitest/storybook family to latest
+
+- `vitest`, `@vitest/browser`, `@vitest/coverage-v8`: 3.2.x → **5.0.5**
+- `storybook`, `@storybook/addon-vitest`, `@storybook/addon-a11y`, `@storybook/addon-docs`, `@storybook/nextjs-vite`, `eslint-plugin-storybook`: ^10.4.4 → **^10.6.3** (addon-vitest accepts vitest 4/5, closing the original conflict with every spec at latest)
+
+Upgrade friction (none of it Prisma's):
+
+- vitest 5 removed string browser providers. `provider: 'playwright'` in `vitest.config.ts` fails typecheck (`TS2769: Type 'string' is not assignable to type 'BrowserProviderOption'`). Fix: new dev dependency `@vitest/browser-playwright` and `provider: playwright()`.
+- The provider upgrade pins a new Playwright browser revision, so browser tests fail with `browserType.launch: Executable doesn't exist` until `npx playwright install chromium` re-downloads (~92 MB).
+- Storybook 10.6 prints a notice that `setProjectAnnotations` in `.storybook/vitest.setup.ts` is applied automatically since 10.3; left as-is for now, candidate cleanup.
+- `npm audit` reports 21 vulnerabilities (3 critical) across the dev tree after the upgrade; untriaged, pre-existing concern, not caused by this change.
+
+### Verification
+
+`npx tsc --noEmit` clean; unit tests 103/103; storybook browser tests 175/175 with the new provider; lint 0 errors (2 pre-existing stylelint browser-compat warnings in `Textarea.tsx`); from-scratch no-lockfile resolution passes.
+
+### Cause classification
+
+- `existing-code` — stale caret pins (vitest 3 era) created the conflict surface.
+- `prisma-platform` — repeated: the install step neither honors the committed lockfile nor exposes any way to see what it actually resolved or why it failed. For an agent, an error that cannot be read is an error that cannot be fixed directly; it forces shotgun remediation.
+
+### Open
+
+- Whether the builder's Node/npm versions differ from local remains unconfirmed (no visibility). If the next retry still fails, the remaining options are asking Prisma support or bisecting dependencies blind.
