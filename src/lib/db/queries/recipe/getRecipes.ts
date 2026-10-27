@@ -1,20 +1,16 @@
-import { desc, eq } from 'drizzle-orm'
 import { objectToCamel } from 'ts-case-convert'
 
 import type { Recipe } from '@/types/recipe'
 
-import { db } from '@/lib/db'
-import { recipes } from '@/lib/db/schema'
 import { isValidOf } from '@/lib/functions/isValidOf'
+import { db } from '@/prisma/db'
 import { recipeListSchema } from '@/types/recipe'
 
 export async function getRecipes(): Promise<Recipe[]> {
   try {
-    const data = await db
-      .select()
-      .from(recipes)
-      .where(eq(recipes.isPublic, true))
-      .orderBy(desc(recipes.createdAt))
+    const data = await db.orm.public.Recipe.where({ isPublic: true })
+      .orderBy((recipe) => recipe.createdAt.desc())
+      .all()
 
     const camelCaseData = objectToCamel(data)
 

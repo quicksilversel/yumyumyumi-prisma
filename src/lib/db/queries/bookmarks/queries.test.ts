@@ -5,7 +5,7 @@
  */
 
 vi.mock('@/auth', () => ({ auth: vi.fn() }))
-vi.mock('@/lib/db', async () => {
+vi.mock('@/prisma/db', async () => {
   const mock = await import('@/lib/vitest/dbMock')
   return { db: mock.mockDb }
 })
@@ -71,15 +71,15 @@ describe('toggleBookmark', () => {
   })
 
   it('removes an existing bookmark and returns false', async () => {
-    mockDbQueue.push([{ id: dbBookmark.id }]) // existing lookup
-    mockDbQueue.push([]) // delete
+    mockDbQueue.push({ id: dbBookmark.id }) // existing lookup
+    mockDbQueue.push(null) // delete
     expect(await toggleBookmark(RECIPE_ID)).toBe(false)
     expect(mockRevalidatePath).toHaveBeenCalledWith(`/recipes/${RECIPE_ID}`)
   })
 
   it('creates a bookmark for the session user and returns true', async () => {
-    mockDbQueue.push([]) // existing lookup: none
-    mockDbQueue.push([]) // insert
+    mockDbQueue.push(null) // existing lookup: none
+    mockDbQueue.push(dbBookmark) // insert
     expect(await toggleBookmark(RECIPE_ID)).toBe(true)
 
     const write = lastCall('values') ?? lastCall('create')

@@ -6,7 +6,7 @@
  */
 
 vi.mock('@/auth', () => ({ auth: vi.fn() }))
-vi.mock('@/lib/db', async () => {
+vi.mock('@/prisma/db', async () => {
   const mock = await import('@/lib/vitest/dbMock')
   return { db: mock.mockDb }
 })
@@ -99,12 +99,12 @@ describe('getRecipes', () => {
 
 describe('getRecipeById', () => {
   it('returns the camelCase recipe when found', async () => {
-    mockDbQueue.push([dbRecipe])
+    mockDbQueue.push(dbRecipe)
     expect(await getRecipeById(RECIPE_ID)).toEqual(appRecipe)
   })
 
   it('returns null when not found', async () => {
-    mockDbQueue.push([])
+    mockDbQueue.push(null)
     expect(await getRecipeById(RECIPE_ID)).toBeNull()
   })
 })
@@ -119,7 +119,7 @@ describe('createRecipe', () => {
   })
 
   it('inserts with the session user id and snake_case jsonb, returns camelCase', async () => {
-    mockDbQueue.push([dbRecipe])
+    mockDbQueue.push(dbRecipe)
     expect(await createRecipe(newRecipe)).toEqual(appRecipe)
 
     const write = lastCall('values') ?? lastCall('create')
@@ -133,14 +133,19 @@ describe('createRecipe', () => {
   })
 
   it('returns null when the returned row fails validation', async () => {
-    mockDbQueue.push([{ ...dbRecipe, title: undefined }])
+    mockDbQueue.push({ ...dbRecipe, title: undefined })
     expect(await createRecipe(newRecipe)).toBeNull()
   })
 })
 
 describe('updateRecipe', () => {
-  const { id: _id, userId: _u, createdAt: _c, updatedAt: _m, ...form } =
-    appRecipe
+  const {
+    id: _id,
+    userId: _u,
+    createdAt: _c,
+    updatedAt: _m,
+    ...form
+  } = appRecipe
 
   it('returns null without a session', async () => {
     mockAuth.mockResolvedValue(null)
@@ -148,14 +153,14 @@ describe('updateRecipe', () => {
   })
 
   it('updates and returns the camelCase recipe, revalidating paths', async () => {
-    mockDbQueue.push([dbRecipe])
+    mockDbQueue.push(dbRecipe)
     expect(await updateRecipe(RECIPE_ID, form)).toEqual(appRecipe)
     expect(mockRevalidatePath).toHaveBeenCalledWith('/')
     expect(mockRevalidatePath).toHaveBeenCalledWith(`/recipes/${RECIPE_ID}`)
   })
 
   it('returns null when no row matches (wrong owner or id)', async () => {
-    mockDbQueue.push([])
+    mockDbQueue.push(null)
     expect(await updateRecipe(RECIPE_ID, form)).toBeNull()
   })
 })
@@ -167,7 +172,7 @@ describe('deleteRecipe', () => {
   })
 
   it('deletes and returns true', async () => {
-    mockDbQueue.push([])
+    mockDbQueue.push(null)
     expect(await deleteRecipe(RECIPE_ID)).toBe(true)
     expect(mockRevalidatePath).toHaveBeenCalledWith('/')
   })

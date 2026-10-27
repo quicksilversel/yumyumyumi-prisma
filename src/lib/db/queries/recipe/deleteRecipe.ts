@@ -1,20 +1,16 @@
 'use server'
 
-import { and, eq } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
 
 import { auth } from '@/auth'
-import { db } from '@/lib/db'
-import { recipes } from '@/lib/db/schema'
+import { db } from '@/prisma/db'
 
 export async function deleteRecipe(id: string): Promise<boolean> {
   try {
     const session = await auth()
     if (!session?.user?.id) return false
 
-    await db
-      .delete(recipes)
-      .where(and(eq(recipes.id, id), eq(recipes.userId, session.user.id)))
+    await db.orm.public.Recipe.where({ id, userId: session.user.id }).delete()
 
     revalidatePath('/')
     revalidatePath('/recipes/[id]', 'page')
