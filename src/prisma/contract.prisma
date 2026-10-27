@@ -1,0 +1,47 @@
+// use prisma-8
+
+model User {
+  id           Uuid              @id @default(sql`gen_random_uuid()`)
+  email        String            @unique
+  passwordHash String            @map("password_hash")
+  createdAt    TimestamptzString @default(now()) @map("created_at")
+  recipes      Recipe[]
+  bookmarks    Bookmark[]
+
+  @@map("users")
+}
+
+model Recipe {
+  id          Uuid              @id @default(sql`gen_random_uuid()`)
+  userId      Uuid?             @map("user_id")
+  user        User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  title       String
+  summary     String?
+  tags        String[]?
+  tips        String?
+  cookTime    Int?              @default(0) @map("cook_time")
+  servings    Int?              @default(1)
+  imageUrl    String?           @map("image_url")
+  source      String?
+  isPublic    Boolean?          @default(true) @map("is_public")
+  createdAt   TimestamptzString @default(now()) @map("created_at")
+  updatedAt   TimestamptzString @default(now()) @onUpdate(now()) @map("updated_at")
+  ingredients Json              @default(sql`'[]'::jsonb`)
+  directions  Json              @default(sql`'[]'::jsonb`)
+  bookmarks   Bookmark[]
+
+  @@index([createdAt], name: "recipes_created_at")
+  @@map("recipes")
+}
+
+model Bookmark {
+  id        Uuid              @id @default(sql`gen_random_uuid()`)
+  userId    Uuid              @map("user_id")
+  recipeId  Uuid              @map("recipe_id")
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipe    Recipe            @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  createdAt TimestamptzString @default(now()) @map("created_at")
+
+  @@unique([userId, recipeId])
+  @@map("bookmarks")
+}

@@ -28,9 +28,9 @@ const chipStyles = ({
     default:
       return css`
         color: ${selected ? theme.colors.white : theme.colors.gray[700]};
-        background-color: ${selected
-          ? theme.colors.black
-          : theme.colors.gray[100]};
+        background-color: ${
+          selected ? theme.colors.black : theme.colors.gray[100]
+        };
         border: 1px solid transparent;
       `
   }

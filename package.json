@@ -25,7 +25,10 @@
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "db:seed": "tsx --env-file=.env.local src/lib/db/seed.ts"
+    "db:seed": "tsx --env-file=.env.local src/lib/db/seed.ts",
+    "db:seed:prisma": "tsx --env-file=.env.local src/prisma/seed.ts",
+    "db:validate": "tsx --env-file=.env.local src/prisma/validate.ts",
+    "contract:emit": "prisma contract emit"
   },
   "dependencies": {
     "@emotion/css": "^11.13.5",
@@ -34,6 +37,7 @@
     "@emotion/styled": "^11.14.1",
     "@hookform/resolvers": "^5.2.1",
     "@neondatabase/serverless": "^1.1.0",
+    "@prisma/orm-postgres": "^8.0.0-rc.20",
     "@vercel/analytics": "^2.0.1",
     "@vercel/blob": "^2.4.0",
     "@vercel/speed-insights": "^2.0.0",
@@ -51,6 +55,7 @@
   },
   "devDependencies": {
     "@chromatic-com/storybook": "^5.2.1",
+    "@prisma/cli-engine": "^0.9.0",
     "@storybook/addon-a11y": "^10.6.3",
     "@storybook/addon-docs": "^10.6.3",
     "@storybook/addon-vitest": "^10.6.3",
@@ -78,6 +83,7 @@
     "postcss-styled-syntax": "^0.7.1",
     "postcss-syntax": "^0.36.2",
     "prettier": "^3.8.4",
+    "prisma": "^8.0.0-rc.27",
     "storybook": "^10.6.3",
     "stylelint": "^16.24.0",
     "stylelint-config-recess-order": "^7.3.0",

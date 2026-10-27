@@ -63,14 +63,16 @@ export const Grid = styled.div<{
       }
 
       /* stylelint-disable-next-line media-query-no-invalid */
-      @media (width > ${theme.breakpoints.sm}) and (width <= ${theme.breakpoints
-          .md}) {
+      @media (width > ${theme.breakpoints.sm}) and (width <= ${
+          theme.breakpoints.md
+        }) {
         grid-template-columns: repeat(2, 1fr);
       }
 
       /* stylelint-disable-next-line media-query-no-invalid */
-      @media (width > ${theme.breakpoints.md}) and (width <= ${theme.breakpoints
-          .lg}) {
+      @media (width > ${theme.breakpoints.md}) and (width <= ${
+          theme.breakpoints.lg
+        }) {
         grid-template-columns: repeat(3, 1fr);
       }
 

@@ -1,0 +1,610 @@
+[
+  {
+    "id": "schema.public",
+    "label": "Create schema \"public\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres"
+    },
+    "precheck": [],
+    "execute": [
+      {
+        "description": "Create schema \"public\"",
+        "sql": "CREATE SCHEMA IF NOT EXISTS \"public\"",
+        "params": []
+      }
+    ],
+    "postcheck": []
+  },
+  {
+    "id": "table.bookmarks",
+    "label": "Create table \"bookmarks\"",
+    "summary": "Creates table \"bookmarks\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "bookmarks"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"bookmarks\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"bookmarks\""
+        ],
+        "expectation": {
+          "expects": "absent",
+          "object": "table \"bookmarks\""
+        }
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"bookmarks\"",
+        "sql": "CREATE TABLE \"public\".\"bookmarks\" (\n  \"created_at\" timestamptz DEFAULT (now()) NOT NULL,\n  \"id\" uuid DEFAULT (gen_random_uuid()) NOT NULL,\n  \"recipe_id\" uuid NOT NULL,\n  \"user_id\" uuid NOT NULL,\n  PRIMARY KEY (\"id\")\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"bookmarks\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_class\" AS \"c\" WHERE (\"c\".\"oid\" = to_regclass($1) AND (\"c\".\"relkind\" = $2 OR \"c\".\"relkind\" = $3))) AS \"result\"",
+        "params": [
+          "\"public\".\"bookmarks\"",
+          "r",
+          "p"
+        ],
+        "expectation": {
+          "expects": "present",
+          "object": "table \"bookmarks\""
+        }
+      }
+    ]
+  },
+  {
+    "id": "table.recipes",
+    "label": "Create table \"recipes\"",
+    "summary": "Creates table \"recipes\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "recipes"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"recipes\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"recipes\""
+        ],
+        "expectation": {
+          "expects": "absent",
+          "object": "table \"recipes\""
+        }
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"recipes\"",
+        "sql": "CREATE TABLE \"public\".\"recipes\" (\n  \"cook_time\" int4 DEFAULT 0,\n  \"created_at\" timestamptz DEFAULT (now()) NOT NULL,\n  \"directions\" json DEFAULT ('[]'::jsonb) NOT NULL,\n  \"id\" uuid DEFAULT (gen_random_uuid()) NOT NULL,\n  \"image_url\" text,\n  \"ingredients\" json DEFAULT ('[]'::jsonb) NOT NULL,\n  \"is_public\" bool DEFAULT true,\n  \"servings\" int4 DEFAULT 1,\n  \"source\" text,\n  \"summary\" text,\n  \"tags\" text[],\n  \"tips\" text,\n  \"title\" text NOT NULL,\n  \"updated_at\" timestamptz DEFAULT (now()) NOT NULL,\n  \"user_id\" uuid,\n  PRIMARY KEY (\"id\"),\n  CONSTRAINT \"recipes_tags_elem_not_null_aecbe9e2\" CHECK (array_position(\"tags\", NULL) IS NULL)\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"recipes\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_class\" AS \"c\" WHERE (\"c\".\"oid\" = to_regclass($1) AND (\"c\".\"relkind\" = $2 OR \"c\".\"relkind\" = $3))) AS \"result\"",
+        "params": [
+          "\"public\".\"recipes\"",
+          "r",
+          "p"
+        ],
+        "expectation": {
+          "expects": "present",
+          "object": "table \"recipes\""
+        }
+      }
+    ]
+  },
+  {
+    "id": "table.users",
+    "label": "Create table \"users\"",
+    "summary": "Creates table \"users\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "users"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"users\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"users\""
+        ],
+        "expectation": {
+          "expects": "absent",
+          "object": "table \"users\""
+        }
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"users\"",
+        "sql": "CREATE TABLE \"public\".\"users\" (\n  \"created_at\" timestamptz DEFAULT (now()) NOT NULL,\n  \"email\" text NOT NULL,\n  \"id\" uuid DEFAULT (gen_random_uuid()) NOT NULL,\n  \"password_hash\" text NOT NULL,\n  PRIMARY KEY (\"id\")\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"users\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_class\" AS \"c\" WHERE (\"c\".\"oid\" = to_regclass($1) AND (\"c\".\"relkind\" = $2 OR \"c\".\"relkind\" = $3))) AS \"result\"",
+        "params": [
+          "\"public\".\"users\"",
+          "r",
+          "p"
+        ],
+        "expectation": {
+          "expects": "present",
+          "object": "table \"users\""
+        }
+      }
+    ]
+  },
+  {
+    "id": "unique.bookmarks.bookmarks_user_id_recipe_id_key",
+    "label": "Add unique constraint on \"bookmarks\" (user_id, recipe_id)",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "unique",
+        "name": "bookmarks_user_id_recipe_id_key",
+        "table": "bookmarks"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure constraint \"bookmarks_user_id_recipe_id_key\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "bookmarks_user_id_recipe_id_key",
+          "public",
+          "\"public\".\"bookmarks\""
+        ],
+        "expectation": {
+          "expects": "absent",
+          "object": "constraint \"bookmarks_user_id_recipe_id_key\" on \"bookmarks\""
+        }
+      }
+    ],
+    "execute": [
+      {
+        "description": "add unique constraint \"bookmarks_user_id_recipe_id_key\"",
+        "sql": "ALTER TABLE \"public\".\"bookmarks\" ADD CONSTRAINT \"bookmarks_user_id_recipe_id_key\" UNIQUE (\"user_id\", \"recipe_id\")"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify unique constraint \"bookmarks_user_id_recipe_id_key\" exists on (user_id, recipe_id)",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3) AND \"c\".\"contype\" = $4 AND (SELECT coalesce(jsonb_agg(key_attribute.attname ORDER BY key_column.position), '[]'::jsonb) FROM unnest(\"c\".\"conkey\"::int2[]) WITH ORDINALITY AS key_column(attnum, position) JOIN pg_attribute key_attribute ON key_attribute.attrelid = \"c\".\"conrelid\" AND key_attribute.attnum = key_column.attnum) = ($5)::jsonb)) AS \"result\"",
+        "params": [
+          "bookmarks_user_id_recipe_id_key",
+          "public",
+          "\"public\".\"bookmarks\"",
+          "u",
+          "[\"user_id\",\"recipe_id\"]"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "unique.users.users_email_key",
+    "label": "Add unique constraint on \"users\" (email)",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "unique",
+        "name": "users_email_key",
+        "table": "users"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure constraint \"users_email_key\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "users_email_key",
+          "public",
+          "\"public\".\"users\""
+        ],
+        "expectation": {
+          "expects": "absent",
+          "object": "constraint \"users_email_key\" on \"users\""
+        }
+      }
+    ],
+    "execute": [
+      {
+        "description": "add unique constraint \"users_email_key\"",
+        "sql": "ALTER TABLE \"public\".\"users\" ADD CONSTRAINT \"users_email_key\" UNIQUE (\"email\")"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify unique constraint \"users_email_key\" exists on (email)",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3) AND \"c\".\"contype\" = $4 AND (SELECT coalesce(jsonb_agg(key_attribute.attname ORDER BY key_column.position), '[]'::jsonb) FROM unnest(\"c\".\"conkey\"::int2[]) WITH ORDINALITY AS key_column(attnum, position) JOIN pg_attribute key_attribute ON key_attribute.attrelid = \"c\".\"conrelid\" AND key_attribute.attnum = key_column.attnum) = ($5)::jsonb)) AS \"result\"",
+        "params": [
+          "users_email_key",
+          "public",
+          "\"public\".\"users\"",
+          "u",
+          "[\"email\"]"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.bookmarks.bookmarks_recipe_id_idx_bc78e692",
+    "label": "Create index \"bookmarks_recipe_id_idx_bc78e692\" on \"bookmarks\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "bookmarks_recipe_id_idx_bc78e692",
+        "table": "bookmarks"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"bookmarks_recipe_id_idx_bc78e692\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"bookmarks_recipe_id_idx_bc78e692\""
+        ],
+        "expectation": {
+          "expects": "absent",
+          "object": "index \"bookmarks_recipe_id_idx_bc78e692\""
+        }
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"bookmarks_recipe_id_idx_bc78e692\"",
+        "sql": "CREATE INDEX \"bookmarks_recipe_id_idx_bc78e692\" ON \"public\".\"bookmarks\" (\"recipe_id\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"bookmarks_recipe_id_idx_bc78e692\" exists on \"bookmarks\" with the planned definition",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_class\" AS \"c\" INNER JOIN \"pg_index\" AS \"i\" ON \"i\".\"indexrelid\" = \"c\".\"oid\" INNER JOIN \"pg_am\" AS \"m\" ON \"m\".\"oid\" = \"c\".\"relam\" WHERE (\"c\".\"oid\" = to_regclass($1) AND (\"c\".\"relkind\" = $2 OR \"c\".\"relkind\" = $3) AND \"i\".\"indrelid\" = to_regclass($4) AND NOT (\"i\".\"indisunique\") AND \"m\".\"amname\" = $5 AND (\"i\".\"indexprs\" IS NULL AND (SELECT coalesce(jsonb_agg(key_attribute.attname ORDER BY key_column.position), '[]'::jsonb) FROM unnest(\"i\".\"indkey\"::int2[]) WITH ORDINALITY AS key_column(attnum, position) JOIN pg_attribute key_attribute ON key_attribute.attrelid = \"i\".\"indrelid\" AND key_attribute.attnum = key_column.attnum) = ($6)::jsonb) AND \"i\".\"indpred\" IS NULL)) AS \"result\"",
+        "params": [
+          "\"public\".\"bookmarks_recipe_id_idx_bc78e692\"",
+          "i",
+          "I",
+          "\"public\".\"bookmarks\"",
+          "btree",
+          "[\"recipe_id\"]"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.bookmarks.bookmarks_user_id_idx_6c952402",
+    "label": "Create index \"bookmarks_user_id_idx_6c952402\" on \"bookmarks\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "bookmarks_user_id_idx_6c952402",
+        "table": "bookmarks"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"bookmarks_user_id_idx_6c952402\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"bookmarks_user_id_idx_6c952402\""
+        ],
+        "expectation": {
+          "expects": "absent",
+          "object": "index \"bookmarks_user_id_idx_6c952402\""
+        }
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"bookmarks_user_id_idx_6c952402\"",
+        "sql": "CREATE INDEX \"bookmarks_user_id_idx_6c952402\" ON \"public\".\"bookmarks\" (\"user_id\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"bookmarks_user_id_idx_6c952402\" exists on \"bookmarks\" with the planned definition",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_class\" AS \"c\" INNER JOIN \"pg_index\" AS \"i\" ON \"i\".\"indexrelid\" = \"c\".\"oid\" INNER JOIN \"pg_am\" AS \"m\" ON \"m\".\"oid\" = \"c\".\"relam\" WHERE (\"c\".\"oid\" = to_regclass($1) AND (\"c\".\"relkind\" = $2 OR \"c\".\"relkind\" = $3) AND \"i\".\"indrelid\" = to_regclass($4) AND NOT (\"i\".\"indisunique\") AND \"m\".\"amname\" = $5 AND (\"i\".\"indexprs\" IS NULL AND (SELECT coalesce(jsonb_agg(key_attribute.attname ORDER BY key_column.position), '[]'::jsonb) FROM unnest(\"i\".\"indkey\"::int2[]) WITH ORDINALITY AS key_column(attnum, position) JOIN pg_attribute key_attribute ON key_attribute.attrelid = \"i\".\"indrelid\" AND key_attribute.attnum = key_column.attnum) = ($6)::jsonb) AND \"i\".\"indpred\" IS NULL)) AS \"result\"",
+        "params": [
+          "\"public\".\"bookmarks_user_id_idx_6c952402\"",
+          "i",
+          "I",
+          "\"public\".\"bookmarks\"",
+          "btree",
+          "[\"user_id\"]"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.recipes.recipes_created_at_225d8c0f",
+    "label": "Create index \"recipes_created_at_225d8c0f\" on \"recipes\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "recipes_created_at_225d8c0f",
+        "table": "recipes"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"recipes_created_at_225d8c0f\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"recipes_created_at_225d8c0f\""
+        ],
+        "expectation": {
+          "expects": "absent",
+          "object": "index \"recipes_created_at_225d8c0f\""
+        }
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"recipes_created_at_225d8c0f\"",
+        "sql": "CREATE INDEX \"recipes_created_at_225d8c0f\" ON \"public\".\"recipes\" (\"created_at\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"recipes_created_at_225d8c0f\" exists on \"recipes\" with the planned definition",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_class\" AS \"c\" INNER JOIN \"pg_index\" AS \"i\" ON \"i\".\"indexrelid\" = \"c\".\"oid\" INNER JOIN \"pg_am\" AS \"m\" ON \"m\".\"oid\" = \"c\".\"relam\" WHERE (\"c\".\"oid\" = to_regclass($1) AND (\"c\".\"relkind\" = $2 OR \"c\".\"relkind\" = $3) AND \"i\".\"indrelid\" = to_regclass($4) AND NOT (\"i\".\"indisunique\") AND \"m\".\"amname\" = $5 AND (\"i\".\"indexprs\" IS NULL AND (SELECT coalesce(jsonb_agg(key_attribute.attname ORDER BY key_column.position), '[]'::jsonb) FROM unnest(\"i\".\"indkey\"::int2[]) WITH ORDINALITY AS key_column(attnum, position) JOIN pg_attribute key_attribute ON key_attribute.attrelid = \"i\".\"indrelid\" AND key_attribute.attnum = key_column.attnum) = ($6)::jsonb) AND \"i\".\"indpred\" IS NULL)) AS \"result\"",
+        "params": [
+          "\"public\".\"recipes_created_at_225d8c0f\"",
+          "i",
+          "I",
+          "\"public\".\"recipes\"",
+          "btree",
+          "[\"created_at\"]"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.recipes.recipes_user_id_idx_6c952402",
+    "label": "Create index \"recipes_user_id_idx_6c952402\" on \"recipes\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "recipes_user_id_idx_6c952402",
+        "table": "recipes"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"recipes_user_id_idx_6c952402\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"recipes_user_id_idx_6c952402\""
+        ],
+        "expectation": {
+          "expects": "absent",
+          "object": "index \"recipes_user_id_idx_6c952402\""
+        }
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"recipes_user_id_idx_6c952402\"",
+        "sql": "CREATE INDEX \"recipes_user_id_idx_6c952402\" ON \"public\".\"recipes\" (\"user_id\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"recipes_user_id_idx_6c952402\" exists on \"recipes\" with the planned definition",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_class\" AS \"c\" INNER JOIN \"pg_index\" AS \"i\" ON \"i\".\"indexrelid\" = \"c\".\"oid\" INNER JOIN \"pg_am\" AS \"m\" ON \"m\".\"oid\" = \"c\".\"relam\" WHERE (\"c\".\"oid\" = to_regclass($1) AND (\"c\".\"relkind\" = $2 OR \"c\".\"relkind\" = $3) AND \"i\".\"indrelid\" = to_regclass($4) AND NOT (\"i\".\"indisunique\") AND \"m\".\"amname\" = $5 AND (\"i\".\"indexprs\" IS NULL AND (SELECT coalesce(jsonb_agg(key_attribute.attname ORDER BY key_column.position), '[]'::jsonb) FROM unnest(\"i\".\"indkey\"::int2[]) WITH ORDINALITY AS key_column(attnum, position) JOIN pg_attribute key_attribute ON key_attribute.attrelid = \"i\".\"indrelid\" AND key_attribute.attnum = key_column.attnum) = ($6)::jsonb) AND \"i\".\"indpred\" IS NULL)) AS \"result\"",
+        "params": [
+          "\"public\".\"recipes_user_id_idx_6c952402\"",
+          "i",
+          "I",
+          "\"public\".\"recipes\"",
+          "btree",
+          "[\"user_id\"]"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.bookmarks.bookmarks_user_id_fkey",
+    "label": "Add foreign key \"bookmarks_user_id_fkey\" on \"bookmarks\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "bookmarks_user_id_fkey",
+        "table": "bookmarks"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"bookmarks_user_id_fkey\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "bookmarks_user_id_fkey",
+          "public",
+          "\"public\".\"bookmarks\""
+        ],
+        "expectation": {
+          "expects": "absent",
+          "object": "FK \"bookmarks_user_id_fkey\" on \"bookmarks\""
+        }
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"bookmarks_user_id_fkey\"",
+        "sql": "ALTER TABLE \"public\".\"bookmarks\"\nADD CONSTRAINT \"bookmarks_user_id_fkey\"\nFOREIGN KEY (\"user_id\")\nREFERENCES \"public\".\"users\" (\"id\")\nON DELETE CASCADE"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"bookmarks_user_id_fkey\" exists with the planned columns, referenced table and actions",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3) AND \"c\".\"contype\" = $4 AND (SELECT coalesce(jsonb_agg(key_attribute.attname ORDER BY key_column.position), '[]'::jsonb) FROM unnest(\"c\".\"conkey\"::int2[]) WITH ORDINALITY AS key_column(attnum, position) JOIN pg_attribute key_attribute ON key_attribute.attrelid = \"c\".\"conrelid\" AND key_attribute.attnum = key_column.attnum) = ($5)::jsonb AND \"c\".\"confrelid\" = to_regclass($6) AND (SELECT coalesce(jsonb_agg(key_attribute.attname ORDER BY key_column.position), '[]'::jsonb) FROM unnest(\"c\".\"confkey\"::int2[]) WITH ORDINALITY AS key_column(attnum, position) JOIN pg_attribute key_attribute ON key_attribute.attrelid = \"c\".\"confrelid\" AND key_attribute.attnum = key_column.attnum) = ($7)::jsonb AND \"c\".\"confdeltype\" = $8 AND \"c\".\"confupdtype\" = $9)) AS \"result\"",
+        "params": [
+          "bookmarks_user_id_fkey",
+          "public",
+          "\"public\".\"bookmarks\"",
+          "f",
+          "[\"user_id\"]",
+          "\"public\".\"users\"",
+          "[\"id\"]",
+          "c",
+          "a"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.bookmarks.bookmarks_recipe_id_fkey",
+    "label": "Add foreign key \"bookmarks_recipe_id_fkey\" on \"bookmarks\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "bookmarks_recipe_id_fkey",
+        "table": "bookmarks"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"bookmarks_recipe_id_fkey\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "bookmarks_recipe_id_fkey",
+          "public",
+          "\"public\".\"bookmarks\""
+        ],
+        "expectation": {
+          "expects": "absent",
+          "object": "FK \"bookmarks_recipe_id_fkey\" on \"bookmarks\""
+        }
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"bookmarks_recipe_id_fkey\"",
+        "sql": "ALTER TABLE \"public\".\"bookmarks\"\nADD CONSTRAINT \"bookmarks_recipe_id_fkey\"\nFOREIGN KEY (\"recipe_id\")\nREFERENCES \"public\".\"recipes\" (\"id\")\nON DELETE CASCADE"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"bookmarks_recipe_id_fkey\" exists with the planned columns, referenced table and actions",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3) AND \"c\".\"contype\" = $4 AND (SELECT coalesce(jsonb_agg(key_attribute.attname ORDER BY key_column.position), '[]'::jsonb) FROM unnest(\"c\".\"conkey\"::int2[]) WITH ORDINALITY AS key_column(attnum, position) JOIN pg_attribute key_attribute ON key_attribute.attrelid = \"c\".\"conrelid\" AND key_attribute.attnum = key_column.attnum) = ($5)::jsonb AND \"c\".\"confrelid\" = to_regclass($6) AND (SELECT coalesce(jsonb_agg(key_attribute.attname ORDER BY key_column.position), '[]'::jsonb) FROM unnest(\"c\".\"confkey\"::int2[]) WITH ORDINALITY AS key_column(attnum, position) JOIN pg_attribute key_attribute ON key_attribute.attrelid = \"c\".\"confrelid\" AND key_attribute.attnum = key_column.attnum) = ($7)::jsonb AND \"c\".\"confdeltype\" = $8 AND \"c\".\"confupdtype\" = $9)) AS \"result\"",
+        "params": [
+          "bookmarks_recipe_id_fkey",
+          "public",
+          "\"public\".\"bookmarks\"",
+          "f",
+          "[\"recipe_id\"]",
+          "\"public\".\"recipes\"",
+          "[\"id\"]",
+          "c",
+          "a"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.recipes.recipes_user_id_fkey",
+    "label": "Add foreign key \"recipes_user_id_fkey\" on \"recipes\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "recipes_user_id_fkey",
+        "table": "recipes"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"recipes_user_id_fkey\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "recipes_user_id_fkey",
+          "public",
+          "\"public\".\"recipes\""
+        ],
+        "expectation": {
+          "expects": "absent",
+          "object": "FK \"recipes_user_id_fkey\" on \"recipes\""
+        }
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"recipes_user_id_fkey\"",
+        "sql": "ALTER TABLE \"public\".\"recipes\"\nADD CONSTRAINT \"recipes_user_id_fkey\"\nFOREIGN KEY (\"user_id\")\nREFERENCES \"public\".\"users\" (\"id\")\nON DELETE SET NULL"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"recipes_user_id_fkey\" exists with the planned columns, referenced table and actions",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3) AND \"c\".\"contype\" = $4 AND (SELECT coalesce(jsonb_agg(key_attribute.attname ORDER BY key_column.position), '[]'::jsonb) FROM unnest(\"c\".\"conkey\"::int2[]) WITH ORDINALITY AS key_column(attnum, position) JOIN pg_attribute key_attribute ON key_attribute.attrelid = \"c\".\"conrelid\" AND key_attribute.attnum = key_column.attnum) = ($5)::jsonb AND \"c\".\"confrelid\" = to_regclass($6) AND (SELECT coalesce(jsonb_agg(key_attribute.attname ORDER BY key_column.position), '[]'::jsonb) FROM unnest(\"c\".\"confkey\"::int2[]) WITH ORDINALITY AS key_column(attnum, position) JOIN pg_attribute key_attribute ON key_attribute.attrelid = \"c\".\"confrelid\" AND key_attribute.attnum = key_column.attnum) = ($7)::jsonb AND \"c\".\"confdeltype\" = $8 AND \"c\".\"confupdtype\" = $9)) AS \"result\"",
+        "params": [
+          "recipes_user_id_fkey",
+          "public",
+          "\"public\".\"recipes\"",
+          "f",
+          "[\"user_id\"]",
+          "\"public\".\"users\"",
+          "[\"id\"]",
+          "n",
+          "a"
+        ]
+      }
+    ]
+  }
+]

@@ -200,3 +200,61 @@ Added `.github/workflows/pr-check.yml` with two jobs:
 All green on the first run: `check` (lint, typecheck, 103 unit + 175 browser tests) passed, and `diagnose-fresh-install` resolved the tree from scratch without error on clean ubuntu under **both Node 22 and Node 24** (same npm 11.x line as the builder's error output). Stock npm cannot be made to fail on this package.json anywhere we control.
 
 **Revised leading hypothesis:** the Console's "retry" may re-run the setup job against a checkout cached from the first connection attempt, so none of the three fixes were ever actually tested by the builder. The timeline fits: every failure is byte-identical to the first, and the original pre-fix tree is the one tree that reproducibly fails a fresh resolve everywhere. Next action [HUMAN]: disconnect the GitHub repo in the Prisma Console and connect it again from scratch instead of retrying, forcing a fresh clone. If even a fresh connection fails, contact Prisma with the findings above.
+
+---
+
+## Entry 4 — The "waiting for deployment" state, decoded (2026-10-26)
+
+### What happened
+
+[HUMAN] After rechecking the Console, the GitHub integration no longer errors. It now shows: "Waiting for GitHub to start the first deployment. Push to the default branch to retry if it does not start." The human merged the CI PR (a push to main); nothing started, and unlike Vercel there is no deployments tab at all.
+
+### Diagnosis
+
+Reading the Compute/Composer docs end to end resolves it: **Prisma's deploy-on-push runs from the repo's own GitHub Actions**, not from a Prisma-side builder watching pushes. A connected repo authenticates via GitHub OIDC, but the deployment only happens when a committed workflow runs `prisma/cloud-deploy-action` (default branch → production, other branches → per-branch stages). The repo must also contain a Composer declaration: `module.ts` provisioning a service, `src/service.ts` using the `nextjs` build adapter, `prisma.config.ts` with the composer extensions, and `output: 'standalone'` in `next.config.ts`. None of that exists in this repo yet (it is Phase 3 work), so there is nothing for any push to start.
+
+### Cause classification
+
+- `prisma-platform` (docs/UX) — the Console message says "push to the default branch to retry", which implies the platform is watching pushes and will act on one. What is actually missing is repo-side setup (a workflow + Composer files) that the Console never mentions and nothing scaffolds. Also unlike Vercel, connecting a repo creates no visible deployments surface until the first action-driven deploy, which reads as "nothing is happening" with no pointer to why. The information needed to decode the state lives in the Composer docs, not in the product.
+- Not a defect: once decoded, the model (CI-driven deploys, OIDC, per-branch stages named after branches) is coherent and arguably more transparent than a black-box builder. It just is not discoverable from the Console.
+
+### State
+
+No action needed until Phase 3, which now has a concrete checklist: `@prisma/composer` + `@prisma/composer-prisma-cloud` + `prisma` CLI, `module.ts`, `src/service.ts` (nextjs adapter), `prisma.config.ts` (composer extensions, region `ap-northeast-1`), `output: 'standalone'`, `force-dynamic` on pages/actions touching runtime services, and a workflow invoking `prisma/cloud-deploy-action`. The original install-failure root cause remains officially unconfirmed (the stale-retry hypothesis fits all evidence but cannot be proven from outside).
+
+---
+
+## Entry 5 — Phase 1: contract, baseline migration, seed, validation gate (2026-10-27)
+
+### Version decision
+
+`npm view prisma` shows `latest` = **8.0.0-rc.27**, a release candidate, while `@prisma/client`'s latest is stable 7.10.1. Prisma's official agent skill (`prisma-orm-setup` from github.com/prisma/skills) defaults **new applications to Prisma ORM 8**. [HUMAN] Decision: follow the skill's default and use the 8 RC; the article then evaluates the path Prisma itself steers agents onto. Note the skew trap for agents: "install latest prisma + latest @prisma/client" currently yields CLI 8 RC against client 7, two incompatible worlds.
+
+### Prisma 8 is a different product, and the skills carry it
+
+Prisma 8 is contract-first: `src/prisma/contract.prisma` → `prisma contract emit` → `contract.json`/`contract.d.ts` → a `db.orm.<ns>.<Model>` + `db.sql` runtime, with migrations planned from contract diffs over an explicit migration graph with refs. Nothing from classic Prisma training data applies (`schema.prisma`, `@prisma/client`, `prisma migrate dev` are all gone). The decisive factor: `prisma orm init` scaffolds the project and `prisma skills sync` installs a package-owned, version-matched agent skill (routing table + ~2,500 lines of references) into `.agents/`/`.claude/`/`.cursor/`. The agent wrote the full three-model contract (camelCase fields `@map`ped to snake_case, `Uuid` PKs with `sql`-literal DB defaults, `String[]?` nullable array, `Json` columns with jsonb defaults, FKs with `Cascade`/`SetNull`, `@@unique([userId, recipeId])`, a named index) and it **emitted clean on the first attempt** — entirely off the skill references, zero docs-site round-trips. The skill even pre-empted a real trap: Postgres timestamp types return `Temporal` values that throw `RUNTIME.TEMPORAL_UNAVAILABLE` on Node 22/24 without a polyfill; the documented `TimestamptzString` alternative both avoids that and happens to preserve this app's string-timestamp Zod contract exactly.
+
+### What happened, in order
+
+1. `npx prisma orm init --yes --target postgres --authoring psl` — clean scaffold (contract, `prisma.config.ts`, `db.ts`, quick-ref). It silently edits `tsconfig.json` (`module: preserve`) and `package.json`; acceptable but worth knowing. Installed `@prisma/orm-postgres` was rc.20 against CLI rc.27; `prisma skills sync` reconciled the skill to the installed package version.
+2. Adapted `prisma.config.ts`: load `.env.local` (repo convention; the CLI's env-inject output even printed the multi-file tip unprompted) and use `DIRECT_URL` for CLI commands since migrations fail through the pooler.
+3. Authored the contract; `contract emit` passed first try.
+4. Deploy-first discipline per the skill's migration-model reference: baseline before first deploy. `migration plan --name init` wrote the full-create baseline. **Agent mistake:** ran `migration plan` a second time to re-capture output; the CLI refused with `MIGRATION.PLAN_ORIGIN_UNKNOWN` instead of writing a duplicate full-create package. The structured refusal turned a classic agent failure mode (re-running a mutating command for its output) into a no-op. Points to the platform.
+5. `db migrate --advance-ref db` applied 13 operations; `db verify` clean; `db` ref committed so later plans chain.
+6. Seed ported to `db.orm` upserts (same owner UUID, same empty-string conventions). One `tsc` error: the ORM's create input types `Json` columns as `JsonValue` and refused `unknown` — strict in the right place; fixed by typing the export file.
+7. **Validation gate green:** `npm run db:validate` reads all rows through the new client, applies the app's exact read-path conversion, and validates against the untouched Zod schemas. 19 recipes, 4 bookmarks, 1 user; both schemas pass. The "components need zero changes" invariant holds at the data layer before any app code was touched.
+
+### Deliberate schema tightening (vs. the old DB)
+
+Foreign keys with `ON DELETE CASCADE` (bookmarks) / `SET NULL` (recipes.user_id), `UNIQUE (user_id, recipe_id)` on bookmarks, `NOT NULL` on bookmark FKs, and an index on `recipes.created_at`. None existed in the Drizzle-era database; the app's Zod schemas already assumed the stricter shapes. Prisma 8's generated no-NULL-elements check on `tags` is new but vacuous for this data.
+
+### Cause classification
+
+- `agent-mistake` — the double `migration plan` (caught by the CLI, zero damage).
+- `existing-code` — untyped `unknown` jsonb in the old seed surfaced by stricter ORM input types.
+- `prisma-platform` (minor) — the pg driver prints an sslmode/libpq-compat deprecation warning on every connect to Prisma Postgres's own recommended URL format; cosmetic but noisy for a first-party pairing. Also the `latest`-is-an-RC npm tagging noted above.
+- Neutral: the lockfile refresh from installing Prisma bumped prettier, which reformatted 4 unrelated app files; kept (CI formats with the new version), noise in the diff.
+
+### Verification
+
+`contract emit` clean · `db verify` clean · `tsc --noEmit` clean · lint 0 errors (2 pre-existing warnings) · 103/103 unit tests · validation gate green.

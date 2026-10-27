@@ -43,6 +43,14 @@ next-env.d.ts
 # claude
 .claude/
 
+# agent skills synced from installed packages (regenerate: npx prisma skills sync)
+.agents/
+.cursor/
+.devin/
+
 # storybook
 *storybook.log
 storybook-static
+node_modules/
+dist/
+.env
