@@ -3,11 +3,7 @@ import { ArrowUpDown as SortIcon } from 'lucide-react'
 import { Dropdown, type DropdownOption } from '@/components/ui/Dropdown'
 
 export type SortOption =
-  | 'date-desc'
-  | 'date-asc'
-  | 'alphabetical'
-  | 'cooktime-asc'
-  | 'cooktime-desc'
+  'date-desc' | 'date-asc' | 'alphabetical' | 'cooktime-asc' | 'cooktime-desc'
 
 const SORT_OPTIONS: DropdownOption<SortOption>[] = [
   { label: '新しい順', value: 'date-desc' },

@@ -11,11 +11,11 @@ export type CamelCaseToSnakeCaseString<S extends string> = _TrimStartUnderscore<
 >
 
 export type CamelCaseToSnakeCase<GenericObject> = {
-  [ObjectProperty in keyof GenericObject as ObjectProperty extends string
-    ? CamelCaseToSnakeCaseString<ObjectProperty>
-    : ObjectProperty]: GenericObject[ObjectProperty] extends Array<
-    infer ArrayItem
-  >
+  [
+    ObjectProperty in keyof GenericObject as ObjectProperty extends string
+      ? CamelCaseToSnakeCaseString<ObjectProperty>
+      : ObjectProperty
+  ]: GenericObject[ObjectProperty] extends Array<infer ArrayItem>
     ? ArrayItem extends Record<string, unknown>
       ? Array<CamelCaseToSnakeCase<ArrayItem>>
       : GenericObject[ObjectProperty]
