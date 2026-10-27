@@ -1,11 +1,9 @@
 'use server'
 
-import { and, eq } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
 
 import { auth } from '@/auth'
-import { db } from '@/lib/db'
-import { bookmarks } from '@/lib/db/schema'
+import { db } from '@/prisma/db'
 
 export async function toggleBookmark(recipeId: string): Promise<boolean> {
   try {
@@ -14,25 +12,17 @@ export async function toggleBookmark(recipeId: string): Promise<boolean> {
 
     const userId = session.user.id
 
-    const existing = await db
-      .select({ id: bookmarks.id })
-      .from(bookmarks)
-      .where(
-        and(eq(bookmarks.userId, userId), eq(bookmarks.recipeId, recipeId)),
-      )
-      .limit(1)
+    const existing = await db.orm.public.Bookmark.where({ userId, recipeId })
+      .select('id')
+      .first()
 
     let nowBookmarked: boolean
 
-    if (existing.length > 0) {
-      await db
-        .delete(bookmarks)
-        .where(
-          and(eq(bookmarks.userId, userId), eq(bookmarks.recipeId, recipeId)),
-        )
+    if (existing) {
+      await db.orm.public.Bookmark.where({ userId, recipeId }).delete()
       nowBookmarked = false
     } else {
-      await db.insert(bookmarks).values({ userId, recipeId })
+      await db.orm.public.Bookmark.create({ userId, recipeId })
       nowBookmarked = true
     }
 

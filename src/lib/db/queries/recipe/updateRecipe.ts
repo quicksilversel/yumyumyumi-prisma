@@ -1,15 +1,13 @@
 'use server'
 
-import { and, eq } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
 import { objectToCamel, objectToSnake } from 'ts-case-convert'
 
 import type { Recipe, RecipeForm } from '@/types/recipe'
 
 import { auth } from '@/auth'
-import { db } from '@/lib/db'
-import { recipes } from '@/lib/db/schema'
 import { isValidOf } from '@/lib/functions/isValidOf'
+import { db } from '@/prisma/db'
 import { recipeSchema } from '@/types/recipe'
 
 export async function updateRecipe(
@@ -22,16 +20,16 @@ export async function updateRecipe(
 
     const { ingredients, directions, ...rest } = updates
 
-    const [data] = await db
-      .update(recipes)
-      .set({
-        ...rest,
-        updatedAt: new Date().toISOString(),
-        ingredients: objectToSnake(ingredients) as never,
-        directions: objectToSnake(directions) as never,
-      })
-      .where(and(eq(recipes.id, id), eq(recipes.userId, session.user.id)))
-      .returning()
+    // updatedAt is set by the contract's @onUpdate(now()); ownership is
+    // enforced by filtering on the session user, never the client's input.
+    const data = await db.orm.public.Recipe.where({
+      id,
+      userId: session.user.id,
+    }).update({
+      ...rest,
+      ingredients: objectToSnake(ingredients),
+      directions: objectToSnake(directions),
+    })
 
     if (!data) return null
 

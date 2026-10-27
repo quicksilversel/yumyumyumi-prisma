@@ -1,16 +1,12 @@
 'use server'
 
-import { eq } from 'drizzle-orm'
-
-import { db } from '@/lib/db'
-import { recipes } from '@/lib/db/schema'
+import { db } from '@/prisma/db'
 
 export async function getAllTags(): Promise<string[]> {
   try {
-    const rows = await db
-      .select({ tags: recipes.tags })
-      .from(recipes)
-      .where(eq(recipes.isPublic, true))
+    const rows = await db.orm.public.Recipe.where({ isPublic: true })
+      .select('tags')
+      .all()
 
     const allTags = new Set<string>()
 

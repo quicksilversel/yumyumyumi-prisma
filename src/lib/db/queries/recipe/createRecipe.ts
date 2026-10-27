@@ -6,9 +6,8 @@ import { objectToCamel, objectToSnake } from 'ts-case-convert'
 import type { Recipe } from '@/types/recipe'
 
 import { auth } from '@/auth'
-import { db } from '@/lib/db'
-import { recipes } from '@/lib/db/schema'
 import { isValidOf } from '@/lib/functions/isValidOf'
+import { db } from '@/prisma/db'
 import { recipeSchema } from '@/types/recipe'
 
 export async function createRecipe(
@@ -20,15 +19,14 @@ export async function createRecipe(
 
     const { ingredients, directions, ...rest } = recipe
 
-    const [data] = await db
-      .insert(recipes)
-      .values({
-        ...rest,
-        userId: session.user.id,
-        ingredients: objectToSnake(ingredients) as never,
-        directions: objectToSnake(directions) as never,
-      })
-      .returning()
+    const data = await db.orm.public.Recipe.create({
+      ...rest,
+      userId: session.user.id,
+      // The DB stores the nested jsonb keys snake_case (is_spice); the app
+      // uses camelCase. Same convention as the pre-Prisma implementation.
+      ingredients: objectToSnake(ingredients),
+      directions: objectToSnake(directions),
+    })
 
     if (!data) return null
 

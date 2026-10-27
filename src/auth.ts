@@ -1,10 +1,8 @@
 import bcrypt from 'bcryptjs'
-import { eq } from 'drizzle-orm'
 import NextAuth from 'next-auth'
 import Credentials from 'next-auth/providers/credentials'
 
-import { db } from '@/lib/db'
-import { users } from '@/lib/db/schema'
+import { db } from '@/prisma/db'
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
@@ -21,11 +19,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const password = credentials?.password as string | undefined
         if (!email || !password) return null
 
-        const [user] = await db
-          .select()
-          .from(users)
-          .where(eq(users.email, email))
-          .limit(1)
+        const user = await db.orm.public.User.where({ email }).first()
 
         if (!user) return null
 

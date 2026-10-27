@@ -1,20 +1,14 @@
-import { eq } from 'drizzle-orm'
 import { objectToCamel } from 'ts-case-convert'
 
 import type { Recipe } from '@/types/recipe'
 
-import { db } from '@/lib/db'
-import { recipes } from '@/lib/db/schema'
 import { isValidOf } from '@/lib/functions/isValidOf'
+import { db } from '@/prisma/db'
 import { recipeSchema } from '@/types/recipe'
 
 export async function getRecipeById(id: string): Promise<Recipe | null> {
   try {
-    const [data] = await db
-      .select()
-      .from(recipes)
-      .where(eq(recipes.id, id))
-      .limit(1)
+    const data = await db.orm.public.Recipe.first({ id })
 
     if (!data) return null
 

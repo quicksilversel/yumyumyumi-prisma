@@ -1,14 +1,12 @@
 'use server'
 
-import { desc, eq } from 'drizzle-orm'
 import { objectToCamel } from 'ts-case-convert'
 
 import type { BookmarkList } from '@/types/bookmarks'
 
 import { auth } from '@/auth'
-import { db } from '@/lib/db'
-import { bookmarks } from '@/lib/db/schema'
 import { isValidOf } from '@/lib/functions/isValidOf'
+import { db } from '@/prisma/db'
 import { bookmarkListSchema } from '@/types/bookmarks'
 
 export async function getBookmarks(): Promise<BookmarkList> {
@@ -16,11 +14,11 @@ export async function getBookmarks(): Promise<BookmarkList> {
     const session = await auth()
     if (!session?.user?.id) return []
 
-    const data = await db
-      .select()
-      .from(bookmarks)
-      .where(eq(bookmarks.userId, session.user.id))
-      .orderBy(desc(bookmarks.createdAt))
+    const data = await db.orm.public.Bookmark.where({
+      userId: session.user.id,
+    })
+      .orderBy((bookmark) => bookmark.createdAt.desc())
+      .all()
 
     const camelCaseData = objectToCamel(data)
 

@@ -258,3 +258,31 @@ Foreign keys with `ON DELETE CASCADE` (bookmarks) / `SET NULL` (recipes.user_id)
 ### Verification
 
 `contract emit` clean · `db verify` clean · `tsc --noEmit` clean · lint 0 errors (2 pre-existing warnings) · 103/103 unit tests · validation gate green.
+
+---
+
+## Entry 6 — Phase 2: query port, auth lookup, Drizzle/Neon removed (2026-10-27)
+
+### Characterization-first
+
+Before touching any query, 24 characterization tests pinned the external contract of all 8 data-access functions (camelCase rows with converted jsonb keys, string timestamps, Zod-validated returns, null/[] fallbacks, auth gating, session-derived ownership, cache revalidation). They were written and run green against the Drizzle implementation first, then the port happened, then the same assertions ran against the Prisma implementation. Only two kinds of test change were needed, both at the mock boundary, neither in an assertion: the mocked module path (`@/lib/db` → `@/prisma/db`) and the queue fixtures where Prisma returns a row-or-null where Drizzle returned an array (`first()`, `create()`, `update()`). A single generic proxy-based chainable mock served both ORMs' fluent APIs.
+
+### The port itself
+
+All 8 query functions plus the Auth.js `authorize` lookup moved to `db.orm.public.<Model>`. The diffs are small and mostly deletions. Notable:
+
+- Ownership filters became `where({ id, userId })` shorthand objects — more legible than the SQL-combinator `and(eq(...), eq(...))` they replaced, and Prisma 8's compile-time "a write needs a filter on every code path" rule means an unscoped `update`/`delete` would not even typecheck. The security contract is now partially machine-enforced.
+- `updateRecipe` no longer hand-sets `updatedAt`; the contract's `@onUpdate(now())` owns it.
+- The Drizzle version needed `as never` casts to write jsonb; Prisma 8's typed `JsonValue` create inputs accepted the same `objectToSnake(...)` output with **no cast**. The whole phase typechecked on the first `tsc` run after the port.
+
+### Removal
+
+`drizzle-orm`, `drizzle-kit`, `@neondatabase/serverless` uninstalled; `src/lib/db/{index,schema,seed}.ts`, the drizzle `migrations/` dir and `drizzle.config.ts` deleted; `db:*` scripts are now Prisma-native (`db:migrate`, `db:verify`, `db:seed`, `db:validate`, `contract:emit`). AGENTS.md updated to describe the new stack (including pointing future agents at the synced prisma-8 skill).
+
+### Cause classification
+
+Nothing to classify: **zero Prisma-platform friction in this phase**, zero human interventions beyond review, and the one historical wart (the `as never` jsonb cast) was existing-code debt the new ORM's types eliminated. After the Phase 0 install saga, this is the counterweight the honest version of the story needs: once running, the contract-first core plus the shipped skill made the actual migration work almost frictionless.
+
+### Verification
+
+`tsc --noEmit` clean (first run) · lint 0 errors · 127/127 tests (103 existing + 24 characterization, zero assertion changes across the port) · `db:validate` green against live data · production build SSG'd the home page and all 19 recipe pages through the Prisma client · runtime smoke test of the built app: home and recipe detail render the real recipe data.

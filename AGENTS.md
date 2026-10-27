@@ -20,7 +20,7 @@ It is a single Next.js App Router app deployed on Vercel. It was migrated off Su
 
 - **Next.js 16** (App Router, Turbopack), **React 19**, **TypeScript 6** (strict)
 - **Styling: Emotion** — `@emotion/styled` + `css` from `@emotion/react`, driven by a typed theme. SSR via a custom Emotion registry. **No Tailwind, no CSS modules, no shadcn.**
-- **Database: Neon** (serverless Postgres) via **Drizzle ORM** (`drizzle-kit` for migrations)
+- **Database: Prisma Postgres** via **Prisma ORM 8** (contract-first: `src/prisma/contract.prisma` + `prisma contract emit` + `db.orm` runtime; migrations via `prisma migration plan` / `prisma db migrate`). Prisma 8 differs radically from classic Prisma — read the synced skill at `.agents/skills/prisma-8/SKILL.md` (regenerate with `npx prisma skills sync`) before touching the data layer.
 - **Auth: Auth.js v5** (`next-auth@beta`) — Credentials provider, **single locked account** (no public signup)
 - **Storage: Vercel Blob** (recipe images)
 - **Forms:** React Hook Form + Zod (`zodResolver`)
@@ -50,16 +50,18 @@ src/
 ├── hooks/                    # useBookmarks/, useRecipeActions/, useHydrated/ (folder-per-hook + index.ts)
 ├── lib/
 │   ├── db/
-│   │   ├── schema.ts         # Drizzle tables: recipes, bookmarks, users
-│   │   ├── index.ts          # `db` (neon-http drizzle client) — server-only
 │   │   ├── queries/          # recipe/ + bookmarks/ data access (see "Data flow")
-│   │   ├── storage/          # uploadImage / deleteImage / validateImage (client→API route)
-│   │   ├── seed.ts           # one-time seed (account + rescued recipes) — `npm run db:seed`
-│   │   └── migrations/       # drizzle-kit output
+│   │   └── storage/          # uploadImage / deleteImage / validateImage (client→API route)
 │   ├── functions/            # pure helpers (isValidOf, …)
 │   ├── imageCompression/     # browser-image-compression wrapper
 │   ├── recipeIcons.ts        # deterministic brand icon picker (placeholder images)
-│   └── vitest/setup.ts       # Vitest unit setup (mocks next/cache, sets test env)
+│   └── vitest/setup.ts       # Vitest unit setup (mocks next/cache, sets test env; dbMock.ts for query tests)
+├── prisma/
+│   ├── contract.prisma       # Prisma 8 data contract (models: users, recipes, bookmarks)
+│   ├── contract.json/.d.ts   # emitted artefacts (`npm run contract:emit`) — committed, never hand-edited
+│   ├── db.ts                 # `db` runtime client (pooled DATABASE_URL) — server-only
+│   ├── seed.ts               # seed (account + rescued recipes) — `npm run db:seed`
+│   └── validate.ts           # Zod data-validation gate — `npm run db:validate`
 ├── styles/themes/            # theme tokens (colors, spacing, typography, borderRadius, shadow, transition) + theme.d.ts
 └── types/                    # Zod schemas + inferred types (recipe.ts, bookmarks.ts, next-auth.d.ts)
 data-export/                  # rescued recipe data (JSON/SQL) — seed source, NOT used at runtime
@@ -70,7 +72,7 @@ data-export/                  # rescued recipe data (JSON/SQL) — seed source, 
 - **Server Components by default.** Add `'use client'` only for hooks/browser APIs/event handlers.
 - **Reads** used by Server Components (`getRecipes`, `getRecipeById`) are plain async server functions, imported **directly from their files** (`@/lib/db/queries/recipe/getRecipes`).
 - **Mutations and any read called from a client component** are **Server Actions** (`'use server'` at the top of the file): `createRecipe`, `updateRecipe`, `deleteRecipe`, `getAllTags`, `getBookmarks`, `toggleBookmark`.
-- ⚠️ **Barrel rule:** the `queries/recipe/index.ts` barrel exports **only Server Actions**. Never re-export the server-only reads (which import the Neon `db`) from a barrel that a client component imports — doing so bundles the DB client into the browser and crashes with `Missing DATABASE_URL`. Server Actions are safe to import from clients (they become RPC stubs); plain server functions are not.
+- ⚠️ **Barrel rule:** the `queries/recipe/index.ts` barrel exports **only Server Actions**. Never re-export the server-only reads (which import the Prisma `db`) from a barrel that a client component imports — doing so bundles the DB client into the browser and crashes. Server Actions are safe to import from clients (they become RPC stubs); plain server functions are not.
 - **Caching:** route-level ISR (`export const revalidate = 3600`) + on-demand **`revalidatePath`** in mutations. We do **not** use `unstable_cache` (Next 16's `revalidateTag` requires a cache profile; `revalidatePath` is the path we took).
 - **Validation + case conversion:** every DB row is validated with Zod via `isValidOf` (`src/lib/functions/isValidOf`) and converted with `objectToCamel`/`objectToSnake`. The DB stores **snake_case** (including nested jsonb keys like `is_spice`); the app sees **camelCase** (`isSpice`). Keep this pipeline — don't hand-map fields.
 - **Auth:** `auth.ts` exposes `handlers/auth/signIn/signOut`. Server-side code gets the user via `await auth()`; client code via the `useAuth()` adapter over `next-auth/react`. There is exactly one account — no signup flow.
@@ -78,13 +80,13 @@ data-export/                  # rescued recipe data (JSON/SQL) — seed source, 
 
 ## Data model
 
-Three Drizzle tables (`src/lib/db/schema.ts`):
+Three models in the Prisma 8 contract (`src/prisma/contract.prisma`), camelCase fields `@map`ped to snake_case columns:
 
-1. `recipes` — master recipe. `tags text[]`, `ingredients`/`directions` as `jsonb` (nested keys snake_case), `is_public`, timestamps as `mode: 'string'`.
+1. `Recipe` — master recipe. `tags String[]?`, `ingredients`/`directions` as `Json` (nested keys snake_case), `isPublic`, timestamps as `TimestamptzString` (string values; `updatedAt` is set by `@onUpdate(now())`).
 2. `bookmarks` — per-user saved recipes (`user_id`, `recipe_id`).
 3. `users` — single account (`email` unique, `password_hash`).
 
-The live data lives in **Neon**, not in the repo. `data-export/recipes_export.json` (+ the CSV import flow) is the seed/backup source.
+The live data lives in **Prisma Postgres**, not in the repo. `data-export/recipes_export.json` is the seed/backup source. Relations have real FKs (`Cascade` on bookmarks, `SetNull` on recipes), and bookmarks are unique per `(userId, recipeId)`.
 
 ## Commands
 
@@ -98,11 +100,13 @@ npm test                           # Vitest unit project (jsdom) — fast, no br
 npm run test:storybook             # Storybook stories in a real browser (Playwright)
 npm run build                      # production build (Turbopack)
 
-# Database (require DATABASE_URL etc. in .env.local)
-npm run db:generate   # generate a migration from schema.ts
-npm run db:migrate    # apply migrations
-npm run db:studio     # browse data
-npm run db:seed       # seed the account + rescued recipes (one-time; needs SEED_EMAIL/SEED_PASSWORD)
+# Database (require DATABASE_URL + DIRECT_URL in .env.local; CLI uses DIRECT_URL)
+npm run contract:emit    # re-emit contract.json/.d.ts after editing contract.prisma
+npx prisma migration plan --name <slug>   # plan a migration from the contract diff
+npm run db:migrate       # apply pending migrations (prisma db migrate)
+npm run db:verify        # check the live DB matches the contract
+npm run db:seed          # seed the account + rescued recipes (needs SEED_EMAIL/SEED_PASSWORD)
+npm run db:validate      # Zod data-validation gate over live rows
 ```
 
 ---
@@ -127,7 +131,7 @@ These apply to all React/TypeScript code in this repo, at both write-time and re
 
 - **Server Components by default.** Add `'use client'` only when hooks, browser APIs, or event handlers are required; split an interactive bit into a small client child rather than making a whole tree client.
 - **Mutations through Server Actions** (`'use server'`), validated server-side. Reserve `app/api/*` for webhooks/integrations (auth handlers, image upload).
-- **Never import the Neon `db` (`@/lib/db`) into a client bundle.** Keep server-only reads out of any barrel a client imports (see the Barrel rule above).
+- **Never import the Prisma `db` (`@/prisma/db`) into a client bundle.** Keep server-only reads out of any barrel a client imports (see the Barrel rule above).
 - **Don't fetch in client components** when data can be fetched server-side; pass it down as props.
 - **After a mutation, call `revalidatePath`** for the affected routes.
 
@@ -169,10 +173,10 @@ These apply to all React/TypeScript code in this repo, at both write-time and re
 
 ## Database
 
-- **Drizzle query builder only — no raw SQL** except in `migrations/`.
+- **Prisma 8 ORM lane (`db.orm.public.<Model>`) by default — no raw SQL.** Drop to `db.sql` only for shapes the ORM can't express; consult `.agents/skills/prisma-8/references/queries-postgres.md` first.
 - **Queries live in `src/lib/db/queries/`** (server actions / server-only modules), never in components.
 - **Never import `db` in client components** (types are fine; the instance is server-only).
-- Timestamps use `mode: 'string'` (Zod expects ISO strings); jsonb is stored snake_case to match the read-path conversion.
+- Timestamps are `TimestamptzString` (string values; Zod expects strings); jsonb is stored snake_case to match the read-path conversion.
 
 ## Accessibility
 
@@ -201,15 +205,15 @@ These apply to all React/TypeScript code in this repo, at both write-time and re
 - For anything larger than a one-liner, propose a plan first; wait for confirmation; then write code.
 - **After implementing, run `npm run lint:fix` then `npm run lint`**, plus `npx tsc --noEmit` and `npm test`. Fix anything flagged before declaring the work done. If a lint rule conflicts for a good reason, raise it rather than silently disabling it.
 - When work is complete, show the diff. **Don't commit unless asked.** The working branch is typically a feature branch, not `main`.
-- **`db:*` scripts hit the live Neon database.** `db:migrate`/`db:seed` and `src/lib/db/importFromCsv.ts` mutate real data (the CSV import **wipes** recipes + bookmarks). Confirm before running destructive ones.
+- **`db:*` scripts hit the live Prisma Postgres database.** `db:migrate`/`db:seed` mutate real data. Confirm before running destructive ones.
 - If fighting the type system suggests a Zod schema should be the source of truth, flag it instead of patching around.
 - Preserve Japanese user-facing strings exactly; flag any that are still English (the UI should read fully Japanese).
 
 # Important Notes
 
 - **Single account.** There is one login (`SEED_EMAIL`/`SEED_PASSWORD`). The site's recipes are public (viewable logged-out); login only gates create/edit/delete and bookmarking. No signup UI.
-- **Data lives in Neon, not the repo.** `data-export/` holds the rescued recipe data used to seed; `src/lib/db/seed.ts` seeds the account + recipes, and `src/lib/db/importFromCsv.ts` refreshes recipes from a CSV (downloading Google Drive images → Vercel Blob).
-- **Free tiers.** Neon auto-suspends/resumes (never deletes) — no keep-alive cron needed. `SessionProvider` uses `refetchOnWindowFocus={false}` to keep `/api/auth/session` calls minimal.
+- **Data lives in Prisma Postgres, not the repo.** `data-export/` holds the rescued recipe data used to seed; `src/prisma/seed.ts` seeds the account + recipes.
+- **Free tiers.** Prisma Postgres idles at zero cost and auto-wakes (never deletes) — no keep-alive cron needed. `SessionProvider` uses `refetchOnWindowFocus={false}` to keep `/api/auth/session` calls minimal.
 - If anything in this file, the Next.js block above, or `node_modules/next/dist/docs/` is wrong, stale, or contradictory, say so.
 
 # Glossary
