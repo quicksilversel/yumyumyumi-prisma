@@ -14,7 +14,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 A personal recipe site — a hobby project built for a friend to collect, view, and save recipes. Tiny audience (1–2 people), maintained by one person. The recipes are Japanese home cooking; the **product UI is in Japanese** (材料, 作り方, お気に入り, 〇〇分 / 〇人分, etc.). All meta-communication (PRs, comments, identifiers, this doc) is in **English**; user-facing copy and domain terms stay Japanese — preserve Japanese strings exactly when editing.
 
-It is a single Next.js App Router app deployed on Vercel. It was migrated off Supabase to a stack that doesn't freeze on inactivity (the original Supabase free-tier project was paused and deleted).
+It is a single Next.js App Router app deployed on **Prisma Compute** via Prisma Composer (`module.ts` + `src/service.ts`; deploys run from `.github/workflows/prisma-deploy.yml` — main deploys production, other branches get preview stages with their own databases). It was first migrated off Supabase (free-tier project paused and deleted), then rebuilt from Neon/Drizzle/Vercel onto the Prisma platform. Config and credentials arrive typed through the Composer service node at boot; `src/instrumentation.ts` bridges them to the env vars the app code reads. Storage stays on Vercel Blob.
 
 ## Tech Stack
 

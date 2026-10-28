@@ -286,3 +286,39 @@ Nothing to classify: **zero Prisma-platform friction in this phase**, zero human
 ### Verification
 
 `tsc --noEmit` clean (first run) · lint 0 errors · 127/127 tests (103 existing + 24 characterization, zero assertion changes across the port) · `db:validate` green against live data · production build SSG'd the home page and all 19 recipe pages through the Prisma client · runtime smoke test of the built app: home and recipe detail render the real recipe data.
+
+---
+
+## Entry 7 — Phase 3: Composer app, Compute deploy wiring (2026-10-28)
+
+### The Phase 0 mystery, finally solved
+
+The `prisma/cloud-deploy-action` README states: "Connecting a repository through the Prisma Console **creates this setup for you with a pull request**." So the Console's setup job (the one that failed three times at `npm install`, entries 1–3) exists to generate a deploy-workflow PR, and the "Waiting for GitHub to start the first deployment" state (entry 4) was waiting for a workflow that was never created because that job never succeeded. Root cause of the whole saga: one opaque, lockfile-blind install step blocked the automation whose output would have explained what the integration expected. Classification stays `prisma-platform`; the fix on our side is authoring the workflow by hand.
+
+### The architectural decision: bridging two configuration models
+
+Composer's binding principle is "your code never reads its environment" — dependencies and credentials arrive typed through the service node (`service.load()` / `service.input()`), and the platform does NOT inject env vars. This app (like most existing Next.js apps) reads `process.env` in three places: the Prisma client (`DATABASE_URL`), Auth.js (`AUTH_SECRET`), and `@vercel/blob` (`BLOB_READ_WRITE_TOKEN`) — the last two inside libraries we don't control. The canonical porting pattern (pages import the service and call `load()` per request) would have forced lazy-config rewrites of `auth.ts` and the upload route.
+
+Chosen bridge: `src/instrumentation.ts` (Next's boot hook) calls `service.load()`/`service.input()` once at server start and assigns the three env vars before any app module reads them. Under local dev/CI, `load()` throws and `.env.local` keeps working. Zero changes to `db.ts`, `auth.ts`, or the upload route. Honest assessment: this trades Composer's purity for blast-radius control; a greenfield app should use the typed bindings directly.
+
+### What was added
+
+- `module.ts` — root module provisioning the ORM-typed database (`postgres({ name: 'database', contract, config })`, so **deploys replay the committed migrations**) and the web service, with `AUTH_SECRET` / `BLOB_READ_WRITE_TOKEN` bound via `envSecret` (first deploy seeds platform variables from the CI runner's env).
+- `src/service.ts` — the Next.js compute service (`nextjs` build adapter, arktype input schema with `secretString()` fields).
+- `src/prisma/data.ts` — the `dataContract` wrapper both ends reference.
+- `prisma.config.ts` — now envelope + `composer` section (`prismaCloud({ region: 'ap-northeast-1' })`, `nextjsBuild()`, `prismaState()`); `definePrismaConfig` import moved to `prisma/config` per the Composer docs.
+- `.github/workflows/prisma-deploy.yml` — `prisma/cloud-deploy-action@v1` with OIDC (repo already connected in the Console, so no stored token). Default branch → production; other branches → preview stages named after them. No teardown job: the action's destroy mode is a documented known limitation (currently fails against the current CLI).
+- `next.config.ts` → `output: 'standalone'`; `@vercel/analytics` / `@vercel/speed-insights` removed (Vercel-host-only).
+
+### The trade: prerendering is gone on the DB-backed routes
+
+`/` (was ISR 1h) and `/recipes/[id]` (was SSG via `generateStaticParams` + ISR) are now `force-dynamic`: the runtime environment does not exist at Compute build time, so pages that query the database cannot prerender. For a two-user site on scale-to-zero compute this is a fair trade, but it is a real regression class for bigger apps and the docs are matter-of-fact about it. The flip side: CI builds no longer need any database access.
+
+### Housekeeping findings
+
+- `@prisma/composer` released 0.35.0 between our skill sync and install; `prisma skills sync` reconciled the local skill in one command. The versioned-skill model keeps proving itself.
+- Scale-to-zero can close idle DB connections as unawaited async errors; per the platform guidance, the instrumentation bridge installs process-level handlers that log instead of crash-looping.
+
+### Verification and open items
+
+`tsc` clean on first run · lint 0 errors · 127/127 tests · standalone build green locally with `/` and `/recipes/[id]` now dynamic. **Not yet verified** (needs the push): whether the CI build passes with no env present (does `postgres()` tolerate an undefined URL at import?), and the deploy itself. [HUMAN] required before the first deploy: add `AUTH_SECRET` and `BLOB_READ_WRITE_TOKEN` as GitHub Actions secrets. The provisioned production database starts empty and gets its schema from the replayed migrations; the data seed against it is a one-time [HUMAN]-assisted step after the first successful deploy.

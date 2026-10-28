@@ -1,0 +1,37 @@
+name: prisma-deploy
+
+on:
+  push:
+
+concurrency:
+  group: prisma-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: oven-sh/setup-bun@v2
+      # The repo is connected in the Prisma Console, so the action
+      # authenticates via GitHub OIDC — no stored Prisma token. The two env
+      # vars seed the stage's platform variables on first deploy (envSecret
+      # bindings in module.ts); afterwards the platform values are the store.
+      - uses: prisma/cloud-deploy-action@v1
+        with:
+          build-command: npm run build
+        env:
+          AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
+          BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
+
+  # No teardown job yet: the action's destroy mode currently fails against
+  # the current CLI (known limitation in prisma/cloud-deploy-action). Stale
+  # preview stages are destroyed from a script when that is fixed.

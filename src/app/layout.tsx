@@ -1,5 +1,3 @@
-import { Analytics } from '@vercel/analytics/next'
-import { SpeedInsights } from '@vercel/speed-insights/next'
 import { Inter } from 'next/font/google'
 
 import type { Metadata } from 'next'
@@ -25,8 +23,6 @@ export default function RootLayout({
         <Providers>
           <Header />
           {children}
-          <Analytics />
-          <SpeedInsights />
         </Providers>
       </body>
     </html>
