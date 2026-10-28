@@ -322,3 +322,53 @@ Chosen bridge: `src/instrumentation.ts` (Next's boot hook) calls `service.load()
 ### Verification and open items
 
 `tsc` clean on first run · lint 0 errors · 127/127 tests · standalone build green locally with `/` and `/recipes/[id]` now dynamic. **Not yet verified** (needs the push): whether the CI build passes with no env present (does `postgres()` tolerate an undefined URL at import?), and the deploy itself. [HUMAN] required before the first deploy: add `AUTH_SECRET` and `BLOB_READ_WRITE_TOKEN` as GitHub Actions secrets. The provisioned production database starts empty and gets its schema from the replayed migrations; the data seed against it is a one-time [HUMAN]-assisted step after the first successful deploy.
+
+---
+
+## Entry 8 — First deploy: one real platform bug, then success (2026-10-28)
+
+### What happened
+
+The first two deploy runs failed identically at the "check environment variables" step:
+
+```
+✘ [DEPLOY.PREFLIGHT_FAILED] prisma-cloud: the address "web" is not inside the app "yumyumyumi".
+```
+
+The error's own `docs:` link points at the CLI error reference, which has no `DEPLOY` namespace at all — the error is undocumented at the address the error itself prints. [HUMAN] added the GitHub secrets between the two runs, ruling missing variables out: the failure was structural.
+
+### Diagnosis (from the installed package source, since the docs dead-ended)
+
+The thrown message lives in `@prisma/composer-prisma-cloud` 0.35.0, inside a legacy-compat shim introduced by ADR-0057 (mapping resource IDs from releases "when an address left out the app name"). Something on the first-deploy path hands it an already-stripped address (`web` instead of `yumyumyumi.web`) and the shim throws. Version 0.34.0 — the version the package-owned Composer skill was authored against — does not contain that code path at all. 0.35.0 had been published between our skill sync and `npm install`, so "install latest" silently crossed a breaking minor.
+
+### Resolution
+
+Pinned `@prisma/composer` and `@prisma/composer-prisma-cloud` to 0.34.0 and re-synced skills. The next run deployed cleanly:
+
+```
+✔ Deployed yumyumyumi to feat/phase3-compute-deploy in 1m 11s.
+web  compute-service  https://v75355yyvimlkvluppxlmk90.nrt.prisma.build
+```
+
+Preview stage in Tokyo, with its own database provisioned and the committed baseline migration replayed by the deploy — the deploy-first discipline from entry 5 paying off exactly as designed.
+
+### Verification of the deployed stage
+
+- Home, login: 200, full app UI renders. (The stage DB is empty by design, so the recipe list is the empty state.)
+- A request for a nonexistent recipe renders the 404 page — `getRecipeById` executed a real query against the stage database and returned null. **The DATABASE_URL bridge works.**
+- `/api/auth/session` returns `200` with a clean `null` — Auth.js booted with a working secret (it errors without one). **The envSecret bridge works.**
+- The CI build question from entry 7 is answered: `npm run build` passes on a runner with no database env at all.
+
+### A smaller find, fixed
+
+Next compiles `instrumentation.ts` for the edge runtime too, where `process.on` is illegal — the build printed non-fatal "Ecmascript file had an error" noise on every run. Split the node-only bridge behind a conditional dynamic import (`instrumentation-node.ts`); build output is clean now. Cause: `agent-mistake` (the split-file pattern is documented in Next's docs).
+
+### Cause classification
+
+- `prisma-platform` — a fresh minor of `@prisma/composer` breaks first deploys, and its error message points at documentation that does not exist. The mitigation is the same version-coupling discipline Prisma's own ORM skill teaches: pin the Composer packages to the skill's `library_version`.
+- `agent-mistake` — the instrumentation edge-runtime noise.
+- The missing-secrets first run was [HUMAN]-resolved but turned out not to be the blocker.
+
+### Open
+
+Production deploy happens when this PR merges to main (new production database, migrations replayed, then a one-time data seed [HUMAN-assisted: needs the production DB's connection string from the Console]).
