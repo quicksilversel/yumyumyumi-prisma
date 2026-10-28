@@ -1,6 +1,9 @@
 import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
+  // Prisma Compute's nextjs build adapter assembles the standalone output.
+  output: 'standalone',
+
   ...(process.env.NODE_ENV !== 'production' && {
     cacheMaxMemorySize: 0,
   }),

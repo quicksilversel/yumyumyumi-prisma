@@ -2,19 +2,10 @@ import { notFound } from 'next/navigation'
 
 import { RecipeDetail } from '@/components/features/Recipe/Recipe'
 import { getRecipeById } from '@/lib/db/queries/recipe/getRecipeById'
-import { getRecipes } from '@/lib/db/queries/recipe/getRecipes'
 
-export const revalidate = 3600 // 1 hour
-
-export const dynamicParams = true
-
-export async function generateStaticParams() {
-  const recipes = await getRecipes()
-
-  return recipes.map((recipe) => ({
-    id: recipe.id,
-  }))
-}
+// On Prisma Compute the database binding exists only at runtime, so this
+// page renders per request instead of prerendering (see MIGRATION_LOG.md).
+export const dynamic = 'force-dynamic'
 
 export async function generateMetadata({
   params,

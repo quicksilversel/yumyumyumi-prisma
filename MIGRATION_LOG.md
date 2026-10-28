@@ -286,3 +286,89 @@ Nothing to classify: **zero Prisma-platform friction in this phase**, zero human
 ### Verification
 
 `tsc --noEmit` clean (first run) · lint 0 errors · 127/127 tests (103 existing + 24 characterization, zero assertion changes across the port) · `db:validate` green against live data · production build SSG'd the home page and all 19 recipe pages through the Prisma client · runtime smoke test of the built app: home and recipe detail render the real recipe data.
+
+---
+
+## Entry 7 — Phase 3: Composer app, Compute deploy wiring (2026-10-28)
+
+### The Phase 0 mystery, finally solved
+
+The `prisma/cloud-deploy-action` README states: "Connecting a repository through the Prisma Console **creates this setup for you with a pull request**." So the Console's setup job (the one that failed three times at `npm install`, entries 1–3) exists to generate a deploy-workflow PR, and the "Waiting for GitHub to start the first deployment" state (entry 4) was waiting for a workflow that was never created because that job never succeeded. Root cause of the whole saga: one opaque, lockfile-blind install step blocked the automation whose output would have explained what the integration expected. Classification stays `prisma-platform`; the fix on our side is authoring the workflow by hand.
+
+### The architectural decision: bridging two configuration models
+
+Composer's binding principle is "your code never reads its environment" — dependencies and credentials arrive typed through the service node (`service.load()` / `service.input()`), and the platform does NOT inject env vars. This app (like most existing Next.js apps) reads `process.env` in three places: the Prisma client (`DATABASE_URL`), Auth.js (`AUTH_SECRET`), and `@vercel/blob` (`BLOB_READ_WRITE_TOKEN`) — the last two inside libraries we don't control. The canonical porting pattern (pages import the service and call `load()` per request) would have forced lazy-config rewrites of `auth.ts` and the upload route.
+
+Chosen bridge: `src/instrumentation.ts` (Next's boot hook) calls `service.load()`/`service.input()` once at server start and assigns the three env vars before any app module reads them. Under local dev/CI, `load()` throws and `.env.local` keeps working. Zero changes to `db.ts`, `auth.ts`, or the upload route. Honest assessment: this trades Composer's purity for blast-radius control; a greenfield app should use the typed bindings directly.
+
+### What was added
+
+- `module.ts` — root module provisioning the ORM-typed database (`postgres({ name: 'database', contract, config })`, so **deploys replay the committed migrations**) and the web service, with `AUTH_SECRET` / `BLOB_READ_WRITE_TOKEN` bound via `envSecret` (first deploy seeds platform variables from the CI runner's env).
+- `src/service.ts` — the Next.js compute service (`nextjs` build adapter, arktype input schema with `secretString()` fields).
+- `src/prisma/data.ts` — the `dataContract` wrapper both ends reference.
+- `prisma.config.ts` — now envelope + `composer` section (`prismaCloud({ region: 'ap-northeast-1' })`, `nextjsBuild()`, `prismaState()`); `definePrismaConfig` import moved to `prisma/config` per the Composer docs.
+- `.github/workflows/prisma-deploy.yml` — `prisma/cloud-deploy-action@v1` with OIDC (repo already connected in the Console, so no stored token). Default branch → production; other branches → preview stages named after them. No teardown job: the action's destroy mode is a documented known limitation (currently fails against the current CLI).
+- `next.config.ts` → `output: 'standalone'`; `@vercel/analytics` / `@vercel/speed-insights` removed (Vercel-host-only).
+
+### The trade: prerendering is gone on the DB-backed routes
+
+`/` (was ISR 1h) and `/recipes/[id]` (was SSG via `generateStaticParams` + ISR) are now `force-dynamic`: the runtime environment does not exist at Compute build time, so pages that query the database cannot prerender. For a two-user site on scale-to-zero compute this is a fair trade, but it is a real regression class for bigger apps and the docs are matter-of-fact about it. The flip side: CI builds no longer need any database access.
+
+### Housekeeping findings
+
+- `@prisma/composer` released 0.35.0 between our skill sync and install; `prisma skills sync` reconciled the local skill in one command. The versioned-skill model keeps proving itself.
+- Scale-to-zero can close idle DB connections as unawaited async errors; per the platform guidance, the instrumentation bridge installs process-level handlers that log instead of crash-looping.
+
+### Verification and open items
+
+`tsc` clean on first run · lint 0 errors · 127/127 tests · standalone build green locally with `/` and `/recipes/[id]` now dynamic. **Not yet verified** (needs the push): whether the CI build passes with no env present (does `postgres()` tolerate an undefined URL at import?), and the deploy itself. [HUMAN] required before the first deploy: add `AUTH_SECRET` and `BLOB_READ_WRITE_TOKEN` as GitHub Actions secrets. The provisioned production database starts empty and gets its schema from the replayed migrations; the data seed against it is a one-time [HUMAN]-assisted step after the first successful deploy.
+
+---
+
+## Entry 8 — First deploy: one real platform bug, then success (2026-10-28)
+
+### What happened
+
+The first two deploy runs failed identically at the "check environment variables" step:
+
+```
+✘ [DEPLOY.PREFLIGHT_FAILED] prisma-cloud: the address "web" is not inside the app "yumyumyumi".
+```
+
+The error's own `docs:` link points at the CLI error reference, which has no `DEPLOY` namespace at all — the error is undocumented at the address the error itself prints. [HUMAN] added the GitHub secrets between the two runs, ruling missing variables out: the failure was structural.
+
+### Diagnosis (from the installed package source, since the docs dead-ended)
+
+The thrown message lives in `@prisma/composer-prisma-cloud` 0.35.0, inside a legacy-compat shim introduced by ADR-0057 (mapping resource IDs from releases "when an address left out the app name"). Something on the first-deploy path hands it an already-stripped address (`web` instead of `yumyumyumi.web`) and the shim throws. Version 0.34.0 — the version the package-owned Composer skill was authored against — does not contain that code path at all. 0.35.0 had been published between our skill sync and `npm install`, so "install latest" silently crossed a breaking minor.
+
+### Resolution
+
+Pinned `@prisma/composer` and `@prisma/composer-prisma-cloud` to 0.34.0 and re-synced skills. The next run deployed cleanly:
+
+```
+✔ Deployed yumyumyumi to feat/phase3-compute-deploy in 1m 11s.
+web  compute-service  https://v75355yyvimlkvluppxlmk90.nrt.prisma.build
+```
+
+Preview stage in Tokyo, with its own database provisioned and the committed baseline migration replayed by the deploy — the deploy-first discipline from entry 5 paying off exactly as designed.
+
+### Verification of the deployed stage
+
+- Home, login: 200, full app UI renders. (The stage DB is empty by design, so the recipe list is the empty state.)
+- A request for a nonexistent recipe renders the 404 page — `getRecipeById` executed a real query against the stage database and returned null. **The DATABASE_URL bridge works.**
+- `/api/auth/session` returns `200` with a clean `null` — Auth.js booted with a working secret (it errors without one). **The envSecret bridge works.**
+- The CI build question from entry 7 is answered: `npm run build` passes on a runner with no database env at all.
+
+### A smaller find, fixed
+
+Next compiles `instrumentation.ts` for the edge runtime too, where `process.on` is illegal — the build printed non-fatal "Ecmascript file had an error" noise on every run. Split the node-only bridge behind a conditional dynamic import (`instrumentation-node.ts`); build output is clean now. Cause: `agent-mistake` (the split-file pattern is documented in Next's docs).
+
+### Cause classification
+
+- `prisma-platform` — a fresh minor of `@prisma/composer` breaks first deploys, and its error message points at documentation that does not exist. The mitigation is the same version-coupling discipline Prisma's own ORM skill teaches: pin the Composer packages to the skill's `library_version`.
+- `agent-mistake` — the instrumentation edge-runtime noise.
+- The missing-secrets first run was [HUMAN]-resolved but turned out not to be the blocker.
+
+### Open
+
+Production deploy happens when this PR merges to main (new production database, migrations replayed, then a one-time data seed [HUMAN-assisted: needs the production DB's connection string from the Console]).
