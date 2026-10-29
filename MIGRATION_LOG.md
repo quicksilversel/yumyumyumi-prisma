@@ -372,3 +372,63 @@ Next compiles `instrumentation.ts` for the edge runtime too, where `process.on` 
 ### Open
 
 Production deploy happens when this PR merges to main (new production database, migrations replayed, then a one-time data seed [HUMAN-assisted: needs the production DB's connection string from the Console]).
+
+---
+
+## Entry 9 — Production deploy: the manually-created database collides with Composer ownership (2026-10-28/29)
+
+### What happened
+
+The merge to main triggered the production deploy, which failed at plan-and-apply with `HostedStateBootstrapError`: the production branch already held one resource — `yumyumyumi-production`, the database created **manually in the Console back in Phase 0** — and Composer refuses to deploy into a branch holding resources it has no deploy state for, because "a deploy would try to recreate them and a destroy would remove nothing."
+
+### Assessment: this error is how errors should look
+
+After the opaque setup-job failures (entries 1–3) and the undocumented preflight error (entry 8), this one named the exact resource, explained the risk it was refusing, and listed the three exits (delete the stage, remove the foreign resources, or deploy into a different project). Diagnosis took one read. Classification: `existing-code` in spirit — the manual database predated the Composer app and squatted in the branch Composer expected to own; the refusal itself is the platform behaving well.
+
+### Resolution
+
+- [HUMAN] Deleted `yumyumyumi-production` in the Console (its contents are fully reproducible from `data-export/` + the seed) and re-ran the deploy: `✔ Deployed yumyumyumi to production in 58.6s`, with the production database provisioned by Composer and the baseline migration replayed.
+- [HUMAN] Seeded the new production database (`DATABASE_URL=<production url> npm run db:seed`, connection string from the Console) and ran the validation gate against it: green.
+
+Lesson for the article: on this platform, resources the app declares should be born from a deploy, not the Console. The hand-made database that bootstrapped Phases 1–2 had to die for production to deploy.
+
+### Phase 4 verification (production, Tokyo)
+
+- Home renders the real seeded recipes. Cold start after scale-to-zero: **8.4s** to first byte on the first request; warm requests ~0.9s. The trade named in entry 7, now measured.
+- Recipe detail renders full content (ingredients/directions sections); a nonexistent id renders the not-found page (served with HTTP 200 through the ingress — quirk noted).
+- `/api/auth/session` 200, login page 200.
+- [HUMAN] Authenticated flows verified by hand in the browser: login, recipe create/edit/delete, bookmark toggle, image upload to Vercel Blob via the bridged token.
+- One-off: an HTTP/2 stream error (curl exit 92) on rapid successive requests during the cold start; not reproducible afterwards.
+
+---
+
+## Final summary
+
+### What went smoothly
+
+- **Prisma ORM 8 itself.** Contract authored correctly on the first emit, zero platform friction across the entire query port (Phase 2 had nothing to classify), stronger types than the Drizzle code it replaced (unscoped writes are compile errors; the `as never` jsonb casts became unnecessary), and the deploy-replayed migration graph worked exactly as designed from dev through preview to production.
+- **The package-owned agent skills.** The decisive factor of the whole migration: versioned, routing-table-indexed references that made an unfamiliar, post-training-data product fully usable. `prisma skills sync` kept them matched to installed versions. Prisma 8's structured CLI refusals twice turned agent mistakes into no-ops.
+- **The CI-driven deploy model.** OIDC with no stored token, per-branch preview stages with their own migrated databases, converge-not-script deploys (unchanged redeploy: 40s no-op).
+
+### What was rough
+
+- **The Console's GitHub setup job**: failed three times on a lockfile-blind `npm install` with an unreadable error report, which silently blocked the generated-workflow PR that would have explained the whole integration (root cause only emerged from the deploy action's README). The single largest time sink.
+- **Version skew as a recurring trap**: npm's `latest` tag on the Prisma CLI is an 8.0 RC while `@prisma/client` latest is stable 7; `@prisma/composer` 0.35.0 (published days after our skill sync) breaks first deploys in an undocumented code path. Mitigation both times: pin to what the shipped skill was authored against.
+- **Docs dead-ends at the worst moments**: the `DEPLOY` error namespace missing from the CLI error reference; the Compute Console surfacing states ("push to retry") that only Composer docs can decode.
+- **Porting trade-offs**: Composer's config model ("code never reads its environment") versus an existing app's `process.env` assumptions needed a deliberate bridge (instrumentation hook), and DB-backed prerendering (ISR/SSG) is off on Compute — measured cost: ~8s cold starts on a scale-to-zero two-user site.
+
+### Open issues
+
+- Preview-stage teardown: the deploy action's destroy mode is a documented known limitation, so stale preview stages accumulate until destroyed by script.
+- Not-found pages return HTTP 200 through the Compute ingress.
+- The `@prisma/composer` 0.35.0 first-deploy bug and the docs gaps should be reported/contributed upstream.
+- Custom domain for the production service not yet configured (out of migration scope).
+
+### Human interventions: 14 total
+
+- **Setup and credentials (6, expected):** repo clone + GitHub repo creation, Prisma workspace/database creation, GitHub secrets, production connection string + seed run.
+- **Console error relays (4, platform visibility gap):** the agent cannot see the Prisma Console, so every setup-job failure and integration state needed a human courier. The single biggest structural friction for agent-driven use of the platform.
+- **Decisions and vetoes (3):** Prisma 8 RC over stable 7; no `legacy-peer-deps` (upgrade properly instead); phased-PR workflow shape.
+- **Destructive operation (1):** deleting the manually-created production database.
+
+Phases 1–2 (the actual ORM migration) needed zero interventions. Everything human-shaped clustered around platform onboarding, credentials, and the Console.
